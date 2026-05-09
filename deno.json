@@ -2,18 +2,16 @@
   "name": "@quickflo/cli",
   "version": "0.1.0",
   "license": "Apache-2.0",
-  "exports": {
-    "./quickflo": "./src/main.ts"
-  },
+  "exports": "./mod.ts",
   "tasks": {
-    "dev": "deno run --allow-net --allow-read --allow-env --allow-write src/main.ts",
-    "install": "deno install --global --force --name quickflo --config deno.json --allow-net --allow-read --allow-env --allow-write src/main.ts",
+    "dev": "deno run --allow-net --allow-read --allow-env --allow-write mod.ts",
+    "install": "deno install --global --force --name quickflo --config deno.json --allow-net --allow-read --allow-env --allow-write mod.ts",
     "test": "deno test --allow-read",
     "fmt": "deno fmt",
     "fmt:check": "deno fmt --check",
     "lint": "deno lint",
-    "check": "deno check src/main.ts",
-    "compile": "deno compile --allow-net --allow-read --allow-env --allow-write --output dist/quickflo src/main.ts",
+    "check": "deno check mod.ts",
+    "compile": "deno compile --allow-net --allow-read --allow-env --allow-write --output dist/quickflo mod.ts",
     "compile:all": "deno run -A scripts/compile-all.ts"
   },
   "imports": {
@@ -38,7 +36,7 @@
   },
   "exclude": ["dist/", ".github/"],
   "publish": {
-    "include": ["src/", "deno.json", "LICENSE", "README.md"],
+    "include": ["mod.ts", "src/", "deno.json", "LICENSE", "README.md"],
     "exclude": ["src/**/*.test.ts"]
   }
 }

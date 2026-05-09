@@ -23,7 +23,7 @@ curl -fsSL https://raw.githubusercontent.com/quickflo/cli/main/install.sh | sh
 ```bash
 deno install --global --force --name quickflo \
   --allow-net --allow-read --allow-env --allow-write \
-  jsr:@quickflo/cli/quickflo
+  jsr:@quickflo/cli
 ```
 
 Make sure `~/.deno/bin` is on your `PATH`.

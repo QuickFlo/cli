@@ -47,7 +47,7 @@ jobs:
             --allow-net --allow-read --allow-env --allow-write \
             --target ${{ matrix.target }} \
             --output "$OUT" \
-            src/main.ts
+            mod.ts
 
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'

@@ -5,21 +5,21 @@
  * Install from JSR:
  *   deno install --global --force --name quickflo \
  *     --allow-net --allow-read --allow-env --allow-write \
- *     jsr:@quickflo/cli/quickflo
+ *     jsr:@quickflo/cli
  *
  * Or, in a clone of this repo:
  *   deno task install
  */
 
 import { Command, EnumType } from '@cliffy/command';
-import { runWorkflowsPush } from './workflows-push.ts';
-import { runWorkflowsPull } from './workflows-pull.ts';
-import { runWorkflowsList } from './workflows-list.ts';
-import { runWorkflowsGet } from './workflows-get.ts';
-import { runPackagesList } from './packages-list.ts';
-import { runPackagesInstall } from './packages-install.ts';
-import { runPackagesPublish } from './packages-publish.ts';
-import { runPackagesDownload } from './packages-download.ts';
+import { runWorkflowsPush } from './src/workflows-push.ts';
+import { runWorkflowsPull } from './src/workflows-pull.ts';
+import { runWorkflowsList } from './src/workflows-list.ts';
+import { runWorkflowsGet } from './src/workflows-get.ts';
+import { runPackagesList } from './src/packages-list.ts';
+import { runPackagesInstall } from './src/packages-install.ts';
+import { runPackagesPublish } from './src/packages-publish.ts';
+import { runPackagesDownload } from './src/packages-download.ts';
 
 const byType = new EnumType(['id', 'suid', 'name']);
 
