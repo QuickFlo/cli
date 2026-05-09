@@ -11,11 +11,11 @@ Written in TypeScript, runs on [Deno](https://deno.com), distributed via
 ### Pre-built binary (recommended)
 
 Download the binary for your platform from the
-[latest release](https://github.com/quickflo/cli/releases/latest) and put it on your `PATH`. macOS /
+[latest release](https://github.com/QuickFlo/cli/releases/latest) and put it on your `PATH`. macOS /
 Linux one-liner:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/quickflo/cli/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/QuickFlo/cli/main/install.sh | sh
 ```
 
 ### From JSR (requires Deno 2+)
@@ -31,7 +31,7 @@ Make sure `~/.deno/bin` is on your `PATH`.
 ### From source
 
 ```bash
-git clone https://github.com/quickflo/cli.git
+git clone https://github.com/QuickFlo/cli.git
 cd cli
 deno task install
 ```

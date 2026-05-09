@@ -8,7 +8,7 @@
 #
 set -eu
 
-REPO="quickflo/cli"
+REPO="QuickFlo/cli"
 BIN="quickflo"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${QF_VERSION:-latest}"
