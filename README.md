@@ -1,4 +1,4 @@
-# quickflo CLI
+# QuickFlo CLI
 
 Command-line interface for [QuickFlo](https://quickflo.app) — push and pull workflows, install and
 publish packages, and manage your QuickFlo organization from your terminal.
