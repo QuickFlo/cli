@@ -2,7 +2,7 @@
  * Supabase auth via the GoTrue REST API. We call the endpoints directly to
  * avoid pulling in the full `@supabase/supabase-js` SDK and its Node polyfills.
  *
- * Sessions are cached per (env, email) at $XDG_CONFIG_HOME/quickflo/session.json
+ * Sessions are cached per (apiUrl, email) at $XDG_CONFIG_HOME/quickflo/session.json
  * so repeat runs within the ~1h access-token TTL skip the password round-trip.
  * Expired access tokens are transparently refreshed; if the refresh token is
  * also rejected we fall back to password login.
@@ -10,7 +10,7 @@
 
 import { colors } from '@cliffy/ansi/colors';
 import { join } from '@std/path';
-import type { EnvConfig, EnvName } from './config.ts';
+import type { EnvConfig } from './config.ts';
 
 interface SupabaseSession {
   access_token: string;
@@ -20,7 +20,7 @@ interface SupabaseSession {
 }
 
 interface CachedSession extends SupabaseSession {
-  env: EnvName;
+  apiUrl: string;
   email: string;
 }
 
@@ -32,13 +32,13 @@ function sessionCachePath(): string {
 }
 
 async function readCachedSession(
-  env: EnvName,
+  apiUrl: string,
   email: string,
 ): Promise<CachedSession | null> {
   try {
     const raw = await Deno.readTextFile(sessionCachePath());
     const parsed = JSON.parse(raw) as CachedSession;
-    if (parsed.env !== env || parsed.email !== email) return null;
+    if (parsed.apiUrl !== apiUrl || parsed.email !== email) return null;
     return parsed;
   } catch {
     return null;
@@ -150,7 +150,6 @@ function promptStderr(prompt: string, hidden = false): string | null {
 }
 
 export interface AuthOptions {
-  env: EnvName;
   envConfig: EnvConfig;
   username?: string;
   password?: string;
@@ -173,7 +172,7 @@ export async function authenticate(opts: AuthOptions): Promise<AuthResult> {
 
   // Try cached session first (access token, then refresh).
   if (!opts.noCache) {
-    const cached = await readCachedSession(opts.env, email);
+    const cached = await readCachedSession(opts.envConfig.apiUrl, email);
     if (cached) {
       if (isAccessTokenFresh(cached)) {
         return { accessToken: cached.access_token, email, cached: true };
@@ -184,7 +183,11 @@ export async function authenticate(opts: AuthOptions): Promise<AuthResult> {
           'refresh_token',
           { refresh_token: cached.refresh_token },
         );
-        const next: CachedSession = { ...refreshed, env: opts.env, email };
+        const next: CachedSession = {
+          ...refreshed,
+          apiUrl: opts.envConfig.apiUrl,
+          email,
+        };
         await writeCachedSession(next);
         return { accessToken: refreshed.access_token, email, cached: true };
       } catch {
@@ -204,7 +207,11 @@ export async function authenticate(opts: AuthOptions): Promise<AuthResult> {
     email,
     password,
   });
-  const toCache: CachedSession = { ...session, env: opts.env, email };
+  const toCache: CachedSession = {
+    ...session,
+    apiUrl: opts.envConfig.apiUrl,
+    email,
+  };
   await writeCachedSession(toCache);
   return { accessToken: session.access_token, email, cached: false };
 }

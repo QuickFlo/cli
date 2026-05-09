@@ -10,7 +10,6 @@
 
 import { colors } from '@cliffy/ansi/colors';
 import { type ApiClient, apiFetch } from './api.ts';
-import { type EnvName } from './config.ts';
 import { buildListParams, type ListOptions } from './filters.ts';
 import { openSession } from './session.ts';
 
@@ -214,7 +213,6 @@ function printInstalledTable(rows: InstalledRow[]): void {
 }
 
 export interface PackagesListOptions extends ListOptions {
-  env: EnvName;
   apiUrl?: string;
   orgId?: string;
   username?: string;

@@ -6,7 +6,6 @@
 import { colors } from '@cliffy/ansi/colors';
 import { resolve } from '@std/path';
 import { type ApiClient, apiFetch } from './api.ts';
-import { type EnvName } from './config.ts';
 import { openSession } from './session.ts';
 import {
   DuplicateKeyError,
@@ -406,7 +405,6 @@ function printSummary(results: PushResult[], createTriggers: boolean): void {
 
 export interface WorkflowsPushOptions {
   dir: string;
-  env: EnvName;
   apiUrl?: string;
   orgId?: string;
   username?: string;

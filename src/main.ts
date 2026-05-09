@@ -21,18 +21,13 @@ import { runPackagesInstall } from './packages-install.ts';
 import { runPackagesPublish } from './packages-publish.ts';
 import { runPackagesDownload } from './packages-download.ts';
 
-const envType = new EnumType(['local', 'prod']);
 const byType = new EnumType(['id', 'suid', 'name']);
 
 const workflowsPush = new Command()
   .description('Bulk upsert workflow definitions from a directory.')
-  .type('env', envType)
   .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
   .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
-  .option('-e, --env <name:env>', 'Target environment (local | prod)', {
-    default: 'local' as const,
-  })
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('--no-cache', 'Ignore cached session and log in fresh')
   .option('-d, --dir <path:file>', 'Directory of workflow JSON files', {
@@ -51,13 +46,12 @@ const workflowsPush = new Command()
   })
   .example(
     'Push + create triggers (prod)',
-    'quickflo workflows push -u me@quickflo.co -d ./my-workflows -w -o abcd -e prod',
+    'quickflo workflows push -u me@quickflo.co -d ./my-workflows -w -o abcd',
   )
   .example('Dry-run', 'quickflo workflows push --dry-run -o abcd')
   .action(async (opts) => {
     await runWorkflowsPush({
       dir: opts.dir,
-      env: opts.env,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
       username: opts.username,
@@ -71,13 +65,9 @@ const workflowsPush = new Command()
 
 const workflowsPull = new Command()
   .description('Download workflow definitions from an org to a local directory.')
-  .type('env', envType)
   .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
   .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
-  .option('-e, --env <name:env>', 'Target environment (local | prod)', {
-    default: 'local' as const,
-  })
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('--no-cache', 'Ignore cached session and log in fresh')
   .option('-d, --dir <path:file>', 'Destination directory for JSON files', {
@@ -119,7 +109,7 @@ const workflowsPull = new Command()
   })
   .example(
     'Pull all (prod)',
-    'quickflo workflows pull -u me@quickflo.co -d ./my-workflows -o abcd -e prod',
+    'quickflo workflows pull -u me@quickflo.co -d ./my-workflows -o abcd',
   )
   .example(
     'Pull by name substring',
@@ -140,7 +130,6 @@ const workflowsPull = new Command()
   .action(async (opts) => {
     await runWorkflowsPull({
       dir: opts.dir,
-      env: opts.env,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
       username: opts.username,
@@ -161,13 +150,9 @@ const workflowsPull = new Command()
 
 const workflowsList = new Command()
   .description("Print the org's workflows as a table (or JSON).")
-  .type('env', envType)
   .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
   .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
-  .option('-e, --env <name:env>', 'Target environment (local | prod)', {
-    default: 'local' as const,
-  })
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('--no-cache', 'Ignore cached session and log in fresh')
   .option(
@@ -219,7 +204,6 @@ const workflowsList = new Command()
   )
   .action(async (opts) => {
     await runWorkflowsList({
-      env: opts.env,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
       username: opts.username,
@@ -242,15 +226,11 @@ const workflowsGet = new Command()
   .description(
     'Print one workflow as pushable JSON (auto-detects SUID / UUID / name).',
   )
-  .type('env', envType)
   .type('by', byType)
   .arguments('<ref:string>')
   .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
   .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
-  .option('-e, --env <name:env>', 'Target environment (local | prod)', {
-    default: 'local' as const,
-  })
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('--no-cache', 'Ignore cached session and log in fresh')
   .option(
@@ -270,7 +250,6 @@ const workflowsGet = new Command()
     await runWorkflowsGet({
       ref,
       by: opts.by,
-      env: opts.env,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
       username: opts.username,
@@ -289,13 +268,9 @@ const workflows = new Command()
 
 const packagesList = new Command()
   .description("Print the org's published or installed packages as a table (or JSON).")
-  .type('env', envType)
   .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
   .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
-  .option('-e, --env <name:env>', 'Target environment (local | prod)', {
-    default: 'local' as const,
-  })
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('--no-cache', 'Ignore cached session and log in fresh')
   .option(
@@ -328,7 +303,6 @@ const packagesList = new Command()
   .example('JSON output', 'quickflo packages list -j -o abcd')
   .action(async (opts) => {
     await runPackagesList({
-      env: opts.env,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
       username: opts.username,
@@ -349,14 +323,10 @@ const packagesInstall = new Command()
   .description(
     'Install a package into the active org. Resolves canonical addresses (@org/name), unlisted-install tokens (qfi_…), or local .qfpkg.zip files.',
   )
-  .type('env', envType)
   .arguments('<ref:string>')
   .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
   .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
-  .option('-e, --env <name:env>', 'Target environment (local | prod)', {
-    default: 'local' as const,
-  })
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('--no-cache', 'Ignore cached session and log in fresh')
   .option('--dry-run', 'Print the install preview and stop without committing', {
@@ -392,7 +362,6 @@ const packagesInstall = new Command()
   .action(async (opts, ref) => {
     await runPackagesInstall({
       ref,
-      env: opts.env,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
       username: opts.username,
@@ -410,15 +379,11 @@ const packagesPublish = new Command()
   .description(
     "Publish a new version of a package. Server assembles the .qfpkg.zip from the org's existing resources.",
   )
-  .type('env', envType)
   .type('visibility', visibilityType)
   .arguments('<package:string>')
   .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
   .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
-  .option('-e, --env <name:env>', 'Target environment (local | prod)', {
-    default: 'local' as const,
-  })
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('--no-cache', 'Ignore cached session and log in fresh')
   .option(
@@ -479,7 +444,6 @@ const packagesPublish = new Command()
     );
     await runPackagesPublish({
       packageRef,
-      env: opts.env,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
       username: opts.username,
@@ -505,14 +469,10 @@ const packagesDownload = new Command()
   .description(
     'Download a package version artifact (.qfpkg.zip) to a local file. Resolves canonical addresses (@org/name, @org/name@version) or unlisted-install tokens (qfi_…).',
   )
-  .type('env', envType)
   .arguments('<ref:string>')
   .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
   .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
-  .option('-e, --env <name:env>', 'Target environment (local | prod)', {
-    default: 'local' as const,
-  })
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('--no-cache', 'Ignore cached session and log in fresh')
   .option(
@@ -545,7 +505,6 @@ const packagesDownload = new Command()
   .action(async (opts, ref) => {
     await runPackagesDownload({
       ref,
-      env: opts.env,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
       username: opts.username,

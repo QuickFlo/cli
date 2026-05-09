@@ -44,8 +44,15 @@ Set these once and forget — every subcommand reads them.
 export QF_USERNAME=you@example.com
 export QF_PASSWORD='your-password'
 export QF_ORG=abcd          # 4-char org SUID (or the org UUID)
-# optional:
-export QF_API_URL=https://go.quickflo.app/api
+```
+
+The CLI defaults to QuickFlo's hosted production deployment. To target a self-hosted or local
+instance, override the API and Supabase endpoints:
+
+```bash
+export QF_API_URL=https://my-quickflo.example.com/api
+export QF_SUPABASE_URL=https://my-supabase.example.com
+export QF_SUPABASE_ANON_KEY=eyJ…
 ```
 
 Sessions cache at `~/.config/quickflo/session.json` (~1h TTL, auto-refreshed). Pass `--no-cache` to
@@ -179,9 +186,12 @@ quickflo workflows push -d ./wf -w > urls.txt   # just URL + secret lines
 | `-u`  | `--username` | `QF_USERNAME` |
 | `-p`  | `--password` | `QF_PASSWORD` |
 | `-o`  | `--org`      | `QF_ORG`      |
-| `-e`  | `--env`      | —             |
 | —     | `--api-url`  | `QF_API_URL`  |
 | —     | `--no-cache` | —             |
+
+For self-hosted or local development, set `QF_SUPABASE_URL` and `QF_SUPABASE_ANON_KEY` env vars
+alongside `QF_API_URL` (these are env-var-only — pasting a 100-character JWT into every command is
+no fun).
 
 ## Development
 

@@ -12,11 +12,12 @@
 import { colors } from '@cliffy/ansi/colors';
 import { type ApiClient, type ResolvedOrg, resolveOrganization } from './api.ts';
 import { authenticate, type AuthResult } from './auth.ts';
-import { type EnvConfig, type EnvName, resolveEnv } from './config.ts';
+import { type EnvConfig, resolveEnv } from './config.ts';
 
 export interface OpenSessionOptions {
-  env: EnvName;
   apiUrl?: string;
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
   orgId?: string;
   username?: string;
   password?: string;
@@ -28,7 +29,6 @@ export interface Session {
   org: ResolvedOrg;
   auth: AuthResult;
   envConfig: EnvConfig;
-  env: EnvName;
 }
 
 export async function openSession(
@@ -43,15 +43,17 @@ export async function openSession(
     Deno.exit(1);
   }
 
-  const envConfig = resolveEnv(opts.env, opts.apiUrl);
+  const envConfig = resolveEnv({
+    apiUrl: opts.apiUrl,
+    supabaseUrl: opts.supabaseUrl,
+    supabaseAnonKey: opts.supabaseAnonKey,
+  });
 
   console.error(colors.bold.cyan(`QuickFlo — ${commandLabel}`));
   console.error(colors.dim('─'.repeat(24)));
   console.error(`  API:  ${envConfig.apiUrl}`);
-  console.error(`  Env:  ${opts.env}`);
 
   const auth = await authenticate({
-    env: opts.env,
     envConfig,
     username: opts.username,
     password: opts.password,
@@ -74,5 +76,5 @@ export async function openSession(
     orgId: org.id,
     accessToken: auth.accessToken,
   };
-  return { client, org, auth, envConfig, env: opts.env };
+  return { client, org, auth, envConfig };
 }

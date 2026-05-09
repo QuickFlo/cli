@@ -7,7 +7,6 @@
 import { colors } from '@cliffy/ansi/colors';
 import { join, resolve } from '@std/path';
 import { type ApiClient, apiFetch } from './api.ts';
-import { type EnvName } from './config.ts';
 import {
   applyTagsFilter,
   applyTemplateFilter,
@@ -169,7 +168,6 @@ async function readIfExists(path: string): Promise<string | null> {
 
 export interface WorkflowsPullOptions extends ListOptions {
   dir: string;
-  env: EnvName;
   apiUrl?: string;
   orgId?: string;
   username?: string;

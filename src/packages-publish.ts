@@ -24,7 +24,6 @@
 import { colors } from '@cliffy/ansi/colors';
 import { resolve as resolvePath } from '@std/path';
 import { type ApiClient, apiFetch } from './api.ts';
-import { type EnvName } from './config.ts';
 import { openSession } from './session.ts';
 
 type PublishRoot =
@@ -191,7 +190,6 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export interface PackagesPublishOptions {
   packageRef: string;
-  env: EnvName;
   apiUrl?: string;
   orgId?: string;
   username?: string;

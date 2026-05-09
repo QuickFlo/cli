@@ -5,7 +5,6 @@
 
 import { colors } from '@cliffy/ansi/colors';
 import { type ApiClient, apiFetch } from './api.ts';
-import { type EnvName } from './config.ts';
 import {
   applyTagsFilter,
   applyTemplateFilter,
@@ -129,7 +128,6 @@ function printTable(rows: WorkflowRow[]): void {
 }
 
 export interface WorkflowsListOptions extends ListOptions {
-  env: EnvName;
   apiUrl?: string;
   orgId?: string;
   username?: string;

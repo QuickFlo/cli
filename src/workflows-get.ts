@@ -5,7 +5,6 @@
 
 import { colors } from '@cliffy/ansi/colors';
 import { type ApiClient, apiFetch } from './api.ts';
-import { type EnvName } from './config.ts';
 import { openSession } from './session.ts';
 
 interface WorkflowRecord {
@@ -66,7 +65,6 @@ function toPushableShape(wf: WorkflowRecord): Record<string, unknown> {
 export interface WorkflowsGetOptions {
   ref: string;
   by?: Lookup;
-  env: EnvName;
   apiUrl?: string;
   orgId?: string;
   username?: string;

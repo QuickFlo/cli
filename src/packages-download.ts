@@ -17,7 +17,6 @@
 import { colors } from '@cliffy/ansi/colors';
 import { resolve as resolvePath } from '@std/path';
 import { type ApiClient } from './api.ts';
-import { type EnvName } from './config.ts';
 import { openSession } from './session.ts';
 import {
   isUnlistedToken,
@@ -119,7 +118,6 @@ function formatBytes(n: number): string {
 
 export interface PackagesDownloadOptions {
   ref: string;
-  env: EnvName;
   apiUrl?: string;
   orgId?: string;
   username?: string;
