@@ -4,7 +4,7 @@
 # and drops it on your PATH. Override with env vars:
 #
 #   INSTALL_DIR=/usr/local/bin sh install.sh
-#   QF_VERSION=v0.2.0          sh install.sh
+#   QF_VERSION=v0.3.0          sh install.sh
 #
 set -eu
 
