@@ -114,14 +114,16 @@ export interface AccessibleOrg {
 }
 
 /**
- * Verify a token works by listing the orgs it has access to. Returns the org
- * list so login/status can show useful feedback.
+ * Verify a token works and return the orgs it can access. Calls /auth/me,
+ * which accepts both Supabase user JWTs and Personal Access Tokens. The
+ * endpoint is read-only — using it here doesn't grant the token any rights
+ * it didn't already have.
  */
 export async function probeToken(
   envConfig: EnvConfig,
   token: string,
 ): Promise<{ organizations: AccessibleOrg[] }> {
-  const res = await fetch(`${envConfig.apiUrl}/organizations`, {
+  const res = await fetch(`${envConfig.apiUrl}/auth/me`, {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
@@ -131,13 +133,20 @@ export async function probeToken(
     const text = await res.text().catch(() => '');
     throw new Error(`Token rejected (${res.status}): ${text || res.statusText}`);
   }
-  const body = (await res.json()) as { data?: AccessibleOrg[] };
-  return { organizations: body.data ?? [] };
+  const body = (await res.json()) as { organizations?: AccessibleOrg[] };
+  return { organizations: body.organizations ?? [] };
 }
 
 /**
- * Read a single line from stdin, optionally with the echo masked. Prompt is
- * written to stderr so commands that emit a payload to stdout pipe cleanly.
+ * Read a single line from stdin, optionally with the echo masked with `*`.
+ * Prompt is written to stderr so commands that emit a payload to stdout pipe
+ * cleanly.
+ *
+ * The masked path runs the terminal in raw mode and parses each byte through
+ * a tiny state machine that drops ANSI escape sequences. This matters because
+ * modern terminals wrap pasted input in bracketed-paste markers
+ * (`ESC[200~ ... ESC[201~`); without filtering, those bytes end up in the
+ * captured string and the server rejects the token with a 401.
  */
 export function promptStderr(prompt: string, hidden = false): string | null {
   const encoder = new TextEncoder();
@@ -163,25 +172,52 @@ export function promptStderr(prompt: string, hidden = false): string | null {
   Deno.stdin.setRaw(true);
   const buf = new Uint8Array(1);
   const chars: string[] = [];
-  while (true) {
-    const n = Deno.stdin.readSync(buf);
-    if (n === null || n === 0) break;
-    const ch = buf[0];
-    if (ch === 0x0d || ch === 0x0a) break; // CR/LF
-    if (ch === 0x7f || ch === 0x08) {
-      // backspace
-      chars.pop();
-      continue;
+  type EscState = 'normal' | 'esc' | 'csi';
+  let state: EscState = 'normal';
+  try {
+    while (true) {
+      const n = Deno.stdin.readSync(buf);
+      if (n === null || n === 0) break;
+      const ch = buf[0];
+
+      if (state === 'esc') {
+        // After ESC: '[' opens a CSI sequence, anything else is a short
+        // escape we swallow along with this byte.
+        state = ch === 0x5b ? 'csi' : 'normal';
+        continue;
+      }
+      if (state === 'csi') {
+        // Skip parameter/intermediate bytes; CSI ends on a final byte 0x40-0x7e.
+        if (ch >= 0x40 && ch <= 0x7e) state = 'normal';
+        continue;
+      }
+
+      if (ch === 0x1b) {
+        state = 'esc';
+        continue;
+      }
+      if (ch === 0x0d || ch === 0x0a) break; // CR/LF
+      if (ch === 0x03) {
+        // Ctrl-C
+        Deno.stdin.setRaw(false);
+        Deno.stderr.writeSync(encoder.encode('\n'));
+        Deno.exit(130);
+      }
+      if (ch === 0x7f || ch === 0x08) {
+        // backspace — erase one character on screen too
+        if (chars.length > 0) {
+          chars.pop();
+          Deno.stderr.writeSync(encoder.encode('\b \b'));
+        }
+        continue;
+      }
+      if (ch < 0x20 || ch > 0x7e) continue; // drop other non-printables
+      chars.push(String.fromCharCode(ch));
+      Deno.stderr.writeSync(encoder.encode('*'));
     }
-    if (ch === 0x03) {
-      // Ctrl-C
-      Deno.stdin.setRaw(false);
-      Deno.stderr.writeSync(encoder.encode('\n'));
-      Deno.exit(130);
-    }
-    chars.push(String.fromCharCode(ch));
+  } finally {
+    Deno.stdin.setRaw(false);
   }
-  Deno.stdin.setRaw(false);
   Deno.stderr.writeSync(encoder.encode('\n'));
   return chars.join('');
 }
@@ -200,7 +236,7 @@ export async function runAuthLogin(opts: AuthLoginOptions): Promise<void> {
   console.error(
     `  Generate a token at ${colors.dim('Settings → Access Tokens')} in the QuickFlo web UI,`,
   );
-  console.error('  then paste it below. Input is hidden.');
+  console.error('  then paste it below. Input is masked.');
   console.error('');
 
   const token = promptStderr('Token:', true)?.trim();

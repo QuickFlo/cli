@@ -39,35 +39,19 @@ export interface ResolvedOrg {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Resolve a user-supplied org identifier (SUID or UUID) to the full org
- * record. RBAC on the backend already restricts the result to orgs the user
- * belongs to, so a missing match means either wrong value or no access.
+ * Resolve a user-supplied org identifier (SUID or UUID) against the orgs the
+ * caller can access. We use the /auth/me response (passed in) instead of
+ * querying /organizations directly because /organizations is UserGuard-only —
+ * PATs can't hit it, but they can hit /auth/me. The auth/me response already
+ * contains every org the caller can access, so the lookup is just a
+ * client-side filter.
  */
-export async function resolveOrganization(
-  opts: { apiUrl: string; accessToken: string },
+export function resolveOrganization(
+  organizations: ResolvedOrg[],
   input: string,
-): Promise<ResolvedOrg> {
+): ResolvedOrg {
   const key = UUID_RE.test(input) ? 'id' : 'suid';
-  const params = new URLSearchParams();
-  params.set(`where[${key}][$eq]`, input);
-  params.set('options[limit]', '1');
-  const res = await fetch(
-    `${opts.apiUrl}/organizations?${params.toString()}`,
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${opts.accessToken}`,
-      },
-    },
-  );
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(
-      `Org lookup failed (${res.status}): ${text || res.statusText}`,
-    );
-  }
-  const body = (await res.json()) as { data?: ResolvedOrg[] };
-  const match = body.data?.[0];
+  const match = organizations.find((o) => o[key] === input);
   if (!match) {
     throw new Error(
       `No organization found with ${key}="${input}" (or you don't have access).`,
