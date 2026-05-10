@@ -9,9 +9,13 @@
  *
  * Or, in a clone of this repo:
  *   deno task install
+ *
+ * Auth: token-based. Run `quickflo auth login` to paste a token from the
+ * QuickFlo web UI, or set `QF_TOKEN` in your env.
  */
 
 import { Command, EnumType } from '@cliffy/command';
+import { runAuthLogin, runAuthLogout, runAuthStatus } from './src/auth.ts';
 import { runWorkflowsPush } from './src/workflows-push.ts';
 import { runWorkflowsPull } from './src/workflows-pull.ts';
 import { runWorkflowsList } from './src/workflows-list.ts';
@@ -23,13 +27,52 @@ import { runPackagesDownload } from './src/packages-download.ts';
 
 const byType = new EnumType(['id', 'suid', 'name']);
 
+const authLogin = new Command()
+  .description(
+    'Sign in by pasting an access token (mint one in the QuickFlo web UI under Settings → Access Tokens). Saves to ~/.config/quickflo/credentials.json.',
+  )
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .example('Sign in to prod', 'quickflo auth login')
+  .example(
+    'Sign in to a self-hosted deployment',
+    'quickflo auth login --api-url https://quickflo.example.com/api',
+  )
+  .action(async (opts) => {
+    await runAuthLogin({
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+    });
+  });
+
+const authLogout = new Command()
+  .description('Clear the stored access token for the current API URL.')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .action(async (opts) => {
+    await runAuthLogout({
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+    });
+  });
+
+const authStatus = new Command()
+  .description(
+    'Show the current sign-in state: which token (env vs stored) and which orgs it can access.',
+  )
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .action(async (opts) => {
+    await runAuthStatus({
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+    });
+  });
+
+const auth = new Command()
+  .description('Manage authentication for the QuickFlo CLI.')
+  .command('login', authLogin)
+  .command('logout', authLogout)
+  .command('status', authStatus);
+
 const workflowsPush = new Command()
   .description('Bulk upsert workflow definitions from a directory.')
-  .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
-  .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--no-cache', 'Ignore cached session and log in fresh')
   .option('-d, --dir <path:file>', 'Directory of workflow JSON files', {
     default: './workflows',
   })
@@ -45,8 +88,8 @@ const workflowsPush = new Command()
     default: false,
   })
   .example(
-    'Push + create triggers (prod)',
-    'quickflo workflows push -u me@quickflo.co -d ./my-workflows -w -o abcd',
+    'Push + create triggers',
+    'quickflo workflows push -d ./my-workflows -w -o abcd',
   )
   .example('Dry-run', 'quickflo workflows push --dry-run -o abcd')
   .action(async (opts) => {
@@ -54,22 +97,16 @@ const workflowsPush = new Command()
       dir: opts.dir,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
-      username: opts.username,
-      password: opts.password,
       dryRun: opts.dryRun,
       createTriggers: opts.createTriggers,
       regenerateSecrets: opts.regenerateSecrets,
-      noCache: opts.cache === false,
     });
   });
 
 const workflowsPull = new Command()
   .description('Download workflow definitions from an org to a local directory.')
-  .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
-  .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--no-cache', 'Ignore cached session and log in fresh')
   .option('-d, --dir <path:file>', 'Destination directory for JSON files', {
     default: './workflows',
   })
@@ -107,10 +144,7 @@ const workflowsPull = new Command()
   .option('--tags-all', 'Require ALL --tags to be present (AND instead of OR)', {
     default: false,
   })
-  .example(
-    'Pull all (prod)',
-    'quickflo workflows pull -u me@quickflo.co -d ./my-workflows -o abcd',
-  )
+  .example('Pull all', 'quickflo workflows pull -d ./my-workflows -o abcd')
   .example(
     'Pull by name substring',
     "quickflo workflows pull -n 'Free Tool' -d ./free-tools -o abcd",
@@ -132,8 +166,6 @@ const workflowsPull = new Command()
       dir: opts.dir,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
-      username: opts.username,
-      password: opts.password,
       name: opts.name,
       where: opts.where,
       order: opts.order,
@@ -144,17 +176,13 @@ const workflowsPull = new Command()
       templates: opts.templates as 'all' | 'only' | 'exclude',
       tags: opts.tags,
       tagsAll: opts.tagsAll,
-      noCache: opts.cache === false,
     });
   });
 
 const workflowsList = new Command()
   .description("Print the org's workflows as a table (or JSON).")
-  .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
-  .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--no-cache', 'Ignore cached session and log in fresh')
   .option(
     '-n, --name <substr:string>',
     'Substring match on workflow name (shorthand for --where name:re:<substr>)',
@@ -206,8 +234,6 @@ const workflowsList = new Command()
     await runWorkflowsList({
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
-      username: opts.username,
-      password: opts.password,
       name: opts.name,
       where: opts.where,
       order: opts.order,
@@ -218,7 +244,6 @@ const workflowsList = new Command()
       templates: opts.templates as 'all' | 'only' | 'exclude',
       tags: opts.tags,
       tagsAll: opts.tagsAll,
-      noCache: opts.cache === false,
     });
   });
 
@@ -228,11 +253,8 @@ const workflowsGet = new Command()
   )
   .type('by', byType)
   .arguments('<ref:string>')
-  .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
-  .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--no-cache', 'Ignore cached session and log in fresh')
   .option(
     '--by <kind:by>',
     'Force lookup mode (id | suid | name). Default: auto-detect.',
@@ -252,10 +274,7 @@ const workflowsGet = new Command()
       by: opts.by,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
-      username: opts.username,
-      password: opts.password,
       json: opts.json,
-      noCache: opts.cache === false,
     });
   });
 
@@ -268,11 +287,8 @@ const workflows = new Command()
 
 const packagesList = new Command()
   .description("Print the org's published or installed packages as a table (or JSON).")
-  .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
-  .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--no-cache', 'Ignore cached session and log in fresh')
   .option(
     '-i, --installed',
     'List packages installed into this org (default: list packages this org has published)',
@@ -305,8 +321,6 @@ const packagesList = new Command()
     await runPackagesList({
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
-      username: opts.username,
-      password: opts.password,
       installed: opts.installed,
       name: opts.name,
       where: opts.where,
@@ -315,7 +329,6 @@ const packagesList = new Command()
       rawQuery: opts.rawQuery,
       json: opts.json,
       all: opts.all,
-      noCache: opts.cache === false,
     });
   });
 
@@ -324,11 +337,8 @@ const packagesInstall = new Command()
     'Install a package into the active org. Resolves canonical addresses (@org/name), unlisted-install tokens (qfi_…), or local .qfpkg.zip files.',
   )
   .arguments('<ref:string>')
-  .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
-  .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--no-cache', 'Ignore cached session and log in fresh')
   .option('--dry-run', 'Print the install preview and stop without committing', {
     default: false,
   })
@@ -364,9 +374,6 @@ const packagesInstall = new Command()
       ref,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
-      username: opts.username,
-      password: opts.password,
-      noCache: opts.cache === false,
       dryRun: opts.dryRun,
       decisionsFile: opts.decisions,
       json: opts.json,
@@ -381,11 +388,8 @@ const packagesPublish = new Command()
   )
   .type('visibility', visibilityType)
   .arguments('<package:string>')
-  .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
-  .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--no-cache', 'Ignore cached session and log in fresh')
   .option(
     '--descriptor <file:file>',
     'JSON file with the full publish payload (matches PublishPackageVersionDto)',
@@ -446,9 +450,6 @@ const packagesPublish = new Command()
       packageRef,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
-      username: opts.username,
-      password: opts.password,
-      noCache: opts.cache === false,
       descriptor: opts.descriptor,
       version: opts.version,
       summary: opts.summary,
@@ -470,11 +471,8 @@ const packagesDownload = new Command()
     'Download a package version artifact (.qfpkg.zip) to a local file. Resolves canonical addresses (@org/name, @org/name@version) or unlisted-install tokens (qfi_…).',
   )
   .arguments('<ref:string>')
-  .option('-u, --username <email:string>', 'Email (or set QF_USERNAME)')
-  .option('-p, --password <password:string>', 'Password (or set QF_PASSWORD)')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--no-cache', 'Ignore cached session and log in fresh')
   .option(
     '--out <path:string>',
     'Output file path (default: <slug>-<version>.qfpkg.zip in cwd)',
@@ -507,9 +505,6 @@ const packagesDownload = new Command()
       ref,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
-      username: opts.username,
-      password: opts.password,
-      noCache: opts.cache === false,
       out: opts.out,
       json: opts.json,
     });
@@ -524,8 +519,9 @@ const packages = new Command()
 
 await new Command()
   .name('quickflo')
-  .version('0.1.0')
+  .version('0.2.0')
   .description('QuickFlo command-line interface.')
+  .command('auth', auth)
   .command('workflows', workflows)
   .command('packages', packages)
   .parse(Deno.args);

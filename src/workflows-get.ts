@@ -67,10 +67,7 @@ export interface WorkflowsGetOptions {
   by?: Lookup;
   apiUrl?: string;
   orgId?: string;
-  username?: string;
-  password?: string;
   json?: boolean;
-  noCache?: boolean;
 }
 
 export async function runWorkflowsGet(

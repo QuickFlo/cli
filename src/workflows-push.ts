@@ -407,12 +407,9 @@ export interface WorkflowsPushOptions {
   dir: string;
   apiUrl?: string;
   orgId?: string;
-  username?: string;
-  password?: string;
   dryRun: boolean;
   createTriggers: boolean;
   regenerateSecrets: boolean;
-  noCache?: boolean;
 }
 
 export async function runWorkflowsPush(

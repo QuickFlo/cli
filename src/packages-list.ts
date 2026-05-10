@@ -215,11 +215,8 @@ function printInstalledTable(rows: InstalledRow[]): void {
 export interface PackagesListOptions extends ListOptions {
   apiUrl?: string;
   orgId?: string;
-  username?: string;
-  password?: string;
   json?: boolean;
   all?: boolean;
-  noCache?: boolean;
   /** When true, list installed packages (PackageInstall rows). Default: false (Published). */
   installed?: boolean;
 }

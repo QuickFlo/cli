@@ -120,9 +120,6 @@ export interface PackagesDownloadOptions {
   ref: string;
   apiUrl?: string;
   orgId?: string;
-  username?: string;
-  password?: string;
-  noCache?: boolean;
   out?: string;
   json?: boolean;
 }

@@ -192,9 +192,6 @@ export interface PackagesPublishOptions {
   packageRef: string;
   apiUrl?: string;
   orgId?: string;
-  username?: string;
-  password?: string;
-  noCache?: boolean;
   descriptor?: string;
   version?: string;
   summary?: string;

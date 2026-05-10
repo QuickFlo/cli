@@ -375,9 +375,6 @@ export interface PackagesInstallOptions {
   ref: string;
   apiUrl?: string;
   orgId?: string;
-  username?: string;
-  password?: string;
-  noCache?: boolean;
   dryRun?: boolean;
   decisionsFile?: string;
   json?: boolean;

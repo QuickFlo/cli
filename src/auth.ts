@@ -1,90 +1,145 @@
 /**
- * Supabase auth via the GoTrue REST API. We call the endpoints directly to
- * avoid pulling in the full `@supabase/supabase-js` SDK and its Node polyfills.
+ * Token-based auth for the QuickFlo CLI.
  *
- * Sessions are cached per (apiUrl, email) at $XDG_CONFIG_HOME/quickflo/session.json
- * so repeat runs within the ~1h access-token TTL skip the password round-trip.
- * Expired access tokens are transparently refreshed; if the refresh token is
- * also rejected we fall back to password login.
+ * The CLI no longer authenticates with email + password against Supabase.
+ * Users mint a Personal Access Token in the QuickFlo web UI (Settings →
+ * Access Tokens) and either set it as `QF_TOKEN` or run `quickflo auth login`
+ * to store it. Every API request carries `Authorization: Bearer <token>`.
+ *
+ * Resolution order:
+ *   1. `QF_TOKEN` env var
+ *   2. Stored credential at `$XDG_CONFIG_HOME/quickflo/credentials.json`
+ *      (mode 0600), keyed by API URL so multiple deployments don't collide
+ *   3. Fail with a hint pointing to `quickflo auth login`
  */
 
 import { colors } from '@cliffy/ansi/colors';
 import { join } from '@std/path';
 import type { EnvConfig } from './config.ts';
+import { resolveEnv } from './config.ts';
 
-interface SupabaseSession {
-  access_token: string;
-  refresh_token: string;
-  expires_at: number; // unix seconds
-  user?: { id: string; email?: string };
+interface StoredCredential {
+  token: string;
+  savedAt: string; // ISO timestamp, informational
 }
 
-interface CachedSession extends SupabaseSession {
-  apiUrl: string;
-  email: string;
+interface CredentialsFile {
+  version: 1;
+  /** keyed by API URL (e.g. https://go.quickflo.app/api) */
+  tokens: Record<string, StoredCredential>;
 }
 
-function sessionCachePath(): string {
+export function credentialsPath(): string {
   const xdg = Deno.env.get('XDG_CONFIG_HOME');
   const home = Deno.env.get('HOME') ?? '';
   const base = xdg || join(home, '.config');
-  return join(base, 'quickflo', 'session.json');
+  return join(base, 'quickflo', 'credentials.json');
 }
 
-async function readCachedSession(
-  apiUrl: string,
-  email: string,
-): Promise<CachedSession | null> {
+async function readCredentials(): Promise<CredentialsFile | null> {
   try {
-    const raw = await Deno.readTextFile(sessionCachePath());
-    const parsed = JSON.parse(raw) as CachedSession;
-    if (parsed.apiUrl !== apiUrl || parsed.email !== email) return null;
-    return parsed;
+    const raw = await Deno.readTextFile(credentialsPath());
+    const parsed = JSON.parse(raw) as Partial<CredentialsFile>;
+    if (parsed.version !== 1 || typeof parsed.tokens !== 'object') return null;
+    return parsed as CredentialsFile;
   } catch {
     return null;
   }
 }
 
-async function writeCachedSession(session: CachedSession): Promise<void> {
-  const path = sessionCachePath();
+async function writeCredentials(file: CredentialsFile): Promise<void> {
+  const path = credentialsPath();
   await Deno.mkdir(join(path, '..'), { recursive: true });
-  await Deno.writeTextFile(path, JSON.stringify(session, null, 2), {
+  await Deno.writeTextFile(path, JSON.stringify(file, null, 2), {
     mode: 0o600,
   });
 }
 
-function isAccessTokenFresh(session: SupabaseSession, skewSeconds = 60): boolean {
-  const now = Math.floor(Date.now() / 1000);
-  return session.expires_at > now + skewSeconds;
+export async function loadStoredToken(apiUrl: string): Promise<string | null> {
+  const creds = await readCredentials();
+  return creds?.tokens?.[apiUrl]?.token ?? null;
 }
 
-async function supabaseTokenRequest(
-  env: EnvConfig,
-  grantType: 'password' | 'refresh_token',
-  body: Record<string, string>,
-): Promise<SupabaseSession> {
-  const res = await fetch(
-    `${env.supabaseUrl}/auth/v1/token?grant_type=${grantType}`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: env.supabaseAnonKey,
-      },
-      body: JSON.stringify(body),
-    },
+export async function storeToken(apiUrl: string, token: string): Promise<void> {
+  const existing = (await readCredentials()) ?? { version: 1 as const, tokens: {} };
+  existing.tokens[apiUrl] = {
+    token,
+    savedAt: new Date().toISOString(),
+  };
+  await writeCredentials(existing);
+}
+
+export async function clearToken(apiUrl: string): Promise<void> {
+  const creds = await readCredentials();
+  if (!creds || !creds.tokens[apiUrl]) return;
+  delete creds.tokens[apiUrl];
+  await writeCredentials(creds);
+}
+
+export interface ResolveTokenOptions {
+  envConfig: EnvConfig;
+}
+
+export interface ResolveTokenResult {
+  token: string;
+  source: 'env' | 'stored';
+}
+
+export async function resolveToken(
+  opts: ResolveTokenOptions,
+): Promise<ResolveTokenResult> {
+  const envToken = Deno.env.get('QF_TOKEN');
+  if (envToken) {
+    return { token: envToken, source: 'env' };
+  }
+  const stored = await loadStoredToken(opts.envConfig.apiUrl);
+  if (stored) {
+    return { token: stored, source: 'stored' };
+  }
+  console.error(
+    colors.red('Error: no QuickFlo access token configured.') +
+      '\n\n' +
+      `  Run ${colors.bold('quickflo auth login')} to paste a token, or set ${
+        colors.bold('QF_TOKEN')
+      } in your env.\n` +
+      `  Generate tokens in the QuickFlo web UI under ${colors.dim('Settings → Access Tokens')}.`,
   );
+  Deno.exit(1);
+}
+
+export interface AccessibleOrg {
+  id: string;
+  suid?: string;
+  name: string;
+}
+
+/**
+ * Verify a token works by listing the orgs it has access to. Returns the org
+ * list so login/status can show useful feedback.
+ */
+export async function probeToken(
+  envConfig: EnvConfig,
+  token: string,
+): Promise<{ organizations: AccessibleOrg[] }> {
+  const res = await fetch(`${envConfig.apiUrl}/organizations`, {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(
-      `Supabase auth ${res.status}: ${text || res.statusText}`,
-    );
+    throw new Error(`Token rejected (${res.status}): ${text || res.statusText}`);
   }
-  return (await res.json()) as SupabaseSession;
+  const body = (await res.json()) as { data?: AccessibleOrg[] };
+  return { organizations: body.data ?? [] };
 }
 
-function promptStderr(prompt: string, hidden = false): string | null {
-  // Writing the prompt to stderr keeps stdout reserved for command payloads.
+/**
+ * Read a single line from stdin, optionally with the echo masked. Prompt is
+ * written to stderr so commands that emit a payload to stdout pipe cleanly.
+ */
+export function promptStderr(prompt: string, hidden = false): string | null {
   const encoder = new TextEncoder();
 
   if (!hidden) {
@@ -104,26 +159,8 @@ function promptStderr(prompt: string, hidden = false): string | null {
     return chars.join('');
   }
 
-  // Hidden (password) prompt — read with echo off.
   Deno.stderr.writeSync(encoder.encode(prompt + ' '));
-  try {
-    Deno.stdin.setRaw(true);
-  } catch {
-    // Not a TTY — fall back to visible read rather than failing.
-    const buf = new Uint8Array(1024);
-    const chars: string[] = [];
-    while (true) {
-      const n = Deno.stdin.readSync(buf);
-      if (n === null || n === 0) break;
-      for (let i = 0; i < n; i++) {
-        const ch = buf[i];
-        if (ch === 0x0a) return chars.join('');
-        if (ch === 0x0d) continue;
-        chars.push(String.fromCharCode(ch));
-      }
-    }
-    return chars.join('');
-  }
+  Deno.stdin.setRaw(true);
   const buf = new Uint8Array(1);
   const chars: string[] = [];
   while (true) {
@@ -149,69 +186,120 @@ function promptStderr(prompt: string, hidden = false): string | null {
   return chars.join('');
 }
 
-export interface AuthOptions {
-  envConfig: EnvConfig;
-  username?: string;
-  password?: string;
-  /** If true, force a fresh password login and ignore any cached session. */
-  noCache?: boolean;
+export interface AuthLoginOptions {
+  apiUrl?: string;
 }
 
-export interface AuthResult {
-  accessToken: string;
-  email: string;
-  cached: boolean;
-}
+export async function runAuthLogin(opts: AuthLoginOptions): Promise<void> {
+  const envConfig = resolveEnv({ apiUrl: opts.apiUrl });
 
-export async function authenticate(opts: AuthOptions): Promise<AuthResult> {
-  const email = opts.username ||
-    Deno.env.get('QF_USERNAME') ||
-    promptStderr('Email:') ||
-    '';
-  if (!email) throw new Error('username is required');
+  console.error(colors.bold.cyan('QuickFlo — Sign in'));
+  console.error(colors.dim('─'.repeat(24)));
+  console.error(`  API: ${envConfig.apiUrl}`);
+  console.error('');
+  console.error(
+    `  Generate a token at ${colors.dim('Settings → Access Tokens')} in the QuickFlo web UI,`,
+  );
+  console.error('  then paste it below. Input is hidden.');
+  console.error('');
 
-  // Try cached session first (access token, then refresh).
-  if (!opts.noCache) {
-    const cached = await readCachedSession(opts.envConfig.apiUrl, email);
-    if (cached) {
-      if (isAccessTokenFresh(cached)) {
-        return { accessToken: cached.access_token, email, cached: true };
-      }
-      try {
-        const refreshed = await supabaseTokenRequest(
-          opts.envConfig,
-          'refresh_token',
-          { refresh_token: cached.refresh_token },
-        );
-        const next: CachedSession = {
-          ...refreshed,
-          apiUrl: opts.envConfig.apiUrl,
-          email,
-        };
-        await writeCachedSession(next);
-        return { accessToken: refreshed.access_token, email, cached: true };
-      } catch {
-        // fall through to password login
-      }
-    }
+  const token = promptStderr('Token:', true)?.trim();
+  if (!token) {
+    console.error(colors.red('Aborted: empty token.'));
+    Deno.exit(1);
   }
 
-  const password = opts.password ||
-    Deno.env.get('QF_PASSWORD') ||
-    promptStderr('Password:', true) ||
-    '';
-  if (!password) throw new Error('password is required');
+  console.error(colors.dim('  Verifying…'));
+  const { organizations } = await probeToken(envConfig, token);
+  await storeToken(envConfig.apiUrl, token);
 
-  console.error(colors.dim(`  Logging in as ${email}…`));
-  const session = await supabaseTokenRequest(opts.envConfig, 'password', {
-    email,
-    password,
-  });
-  const toCache: CachedSession = {
-    ...session,
-    apiUrl: opts.envConfig.apiUrl,
-    email,
-  };
-  await writeCachedSession(toCache);
-  return { accessToken: session.access_token, email, cached: false };
+  console.error('');
+  console.error(colors.green('  ✓ Signed in.'));
+  if (organizations.length === 0) {
+    console.error(
+      colors.yellow(
+        '  ! Token valid but no accessible organizations. Check the token has appropriate permissions.',
+      ),
+    );
+  } else if (organizations.length === 1) {
+    const org = organizations[0];
+    console.error(
+      `    Org: ${org.name} ${colors.dim(`(${org.suid ?? org.id})`)}`,
+    );
+  } else {
+    console.error(`    ${organizations.length} accessible orgs:`);
+    for (const org of organizations) {
+      console.error(
+        `      - ${org.name} ${colors.dim(`(${org.suid ?? org.id})`)}`,
+      );
+    }
+  }
+  console.error('');
+  console.error(colors.dim(`  Saved to ${credentialsPath()}`));
+}
+
+export interface AuthLogoutOptions {
+  apiUrl?: string;
+}
+
+export async function runAuthLogout(opts: AuthLogoutOptions): Promise<void> {
+  const envConfig = resolveEnv({ apiUrl: opts.apiUrl });
+  const had = await loadStoredToken(envConfig.apiUrl);
+  await clearToken(envConfig.apiUrl);
+  if (had) {
+    console.error(colors.green(`✓ Signed out of ${envConfig.apiUrl}.`));
+  } else {
+    console.error(colors.dim(`Not signed in to ${envConfig.apiUrl}.`));
+  }
+}
+
+export interface AuthStatusOptions {
+  apiUrl?: string;
+}
+
+export async function runAuthStatus(opts: AuthStatusOptions): Promise<void> {
+  const envConfig = resolveEnv({ apiUrl: opts.apiUrl });
+
+  const envToken = Deno.env.get('QF_TOKEN');
+  const stored = await loadStoredToken(envConfig.apiUrl);
+  const token = envToken || stored;
+
+  console.error(colors.bold.cyan('QuickFlo — Status'));
+  console.error(colors.dim('─'.repeat(24)));
+  console.error(`  API: ${envConfig.apiUrl}`);
+
+  if (!token) {
+    console.error(`  ${colors.dim('Not signed in.')}`);
+    console.error('');
+    console.error(
+      `  Run ${colors.bold('quickflo auth login')} to paste a token, or set ${
+        colors.bold('QF_TOKEN')
+      }.`,
+    );
+    Deno.exit(0);
+  }
+
+  console.error(
+    `  Token: ${colors.dim(envToken ? '(QF_TOKEN env)' : '(stored)')}`,
+  );
+
+  try {
+    const { organizations } = await probeToken(envConfig, token);
+    console.error(colors.green('  ✓ Token valid.'));
+    if (organizations.length === 1) {
+      const org = organizations[0];
+      console.error(
+        `    Org: ${org.name} ${colors.dim(`(${org.suid ?? org.id})`)}`,
+      );
+    } else {
+      console.error(`    ${organizations.length} accessible orgs.`);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(colors.red(`  ✗ Token invalid: ${msg}`));
+    console.error(
+      colors.dim(`  Run ${colors.bold('quickflo auth login')} to refresh.`),
+    );
+    Deno.exit(1);
+  }
 }

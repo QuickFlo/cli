@@ -38,25 +38,35 @@ deno task install
 
 ## Auth
 
-Set these once and forget — every subcommand reads them.
+The CLI authenticates with a Personal Access Token. Mint one in the QuickFlo
+web UI under **Settings → Access Tokens**, then either store it locally:
 
 ```bash
-export QF_USERNAME=you@example.com
-export QF_PASSWORD='your-password'
-export QF_ORG=abcd          # 4-char org SUID (or the org UUID)
+quickflo auth login              # paste token at the prompt (input is hidden)
+quickflo auth status             # show which token is in use and what it can access
+quickflo auth logout             # clear stored token
 ```
 
-The CLI defaults to QuickFlo's hosted production deployment. To target a self-hosted or local
-instance, override the API and Supabase endpoints:
+…or set it as an env var (handy for CI):
+
+```bash
+export QF_TOKEN=qfp_xxx…
+export QF_ORG=abcd               # only needed if the token can see multiple orgs
+```
+
+Resolution order: `QF_TOKEN` → stored token (`~/.config/quickflo/credentials.json`,
+mode `0600`, keyed by API URL) → fail with a hint pointing to `quickflo auth login`.
+
+The CLI defaults to QuickFlo's hosted production deployment. To target a
+self-hosted or local instance, override the API URL:
 
 ```bash
 export QF_API_URL=https://my-quickflo.example.com/api
-export QF_SUPABASE_URL=https://my-supabase.example.com
-export QF_SUPABASE_ANON_KEY=eyJ…
 ```
 
-Sessions cache at `~/.config/quickflo/session.json` (~1h TTL, auto-refreshed). Pass `--no-cache` to
-force a fresh login.
+Tokens are bound to the org they were minted in, so `-o`/`QF_ORG` becomes
+optional once you've logged in — the CLI auto-resolves the org for you. Pass
+`-o <suid>` only when the token grants access to multiple orgs.
 
 ## Workflows
 
@@ -181,17 +191,13 @@ quickflo workflows push -d ./wf -w > urls.txt   # just URL + secret lines
 
 ## Flags every command takes
 
-| short | long         | env           |
-| ----- | ------------ | ------------- |
-| `-u`  | `--username` | `QF_USERNAME` |
-| `-p`  | `--password` | `QF_PASSWORD` |
-| `-o`  | `--org`      | `QF_ORG`      |
-| —     | `--api-url`  | `QF_API_URL`  |
-| —     | `--no-cache` | —             |
+| short | long        | env          |
+| ----- | ----------- | ------------ |
+| `-o`  | `--org`     | `QF_ORG`     |
+| —     | `--api-url` | `QF_API_URL` |
 
-For self-hosted or local development, set `QF_SUPABASE_URL` and `QF_SUPABASE_ANON_KEY` env vars
-alongside `QF_API_URL` (these are env-var-only — pasting a 100-character JWT into every command is
-no fun).
+Auth is taken from `QF_TOKEN` or the stored credential — never from a flag, so
+tokens never end up in shell history. See [Auth](#auth) above.
 
 ## Development
 

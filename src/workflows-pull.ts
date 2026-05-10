@@ -170,11 +170,8 @@ export interface WorkflowsPullOptions extends ListOptions {
   dir: string;
   apiUrl?: string;
   orgId?: string;
-  username?: string;
-  password?: string;
   force: boolean;
   dryRun: boolean;
-  noCache?: boolean;
   /** `all` (default) includes templates + workflows, `only` = templates only, `exclude` = workflows only. */
   templates?: TemplateFilter;
   tags?: string | string[];

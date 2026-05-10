@@ -130,11 +130,8 @@ function printTable(rows: WorkflowRow[]): void {
 export interface WorkflowsListOptions extends ListOptions {
   apiUrl?: string;
   orgId?: string;
-  username?: string;
-  password?: string;
   json?: boolean;
   all?: boolean;
-  noCache?: boolean;
   /** `all` includes templates + workflows (default), `only` = templates only, `exclude` = workflows only. */
   templates?: TemplateFilter;
   /** Comma-separated tag list (or repeated flag). Matches workflows with any of these tags by default. */
