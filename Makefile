@@ -5,6 +5,9 @@ SHELL := /usr/bin/env bash
 PKG_VERSION := $(shell awk -F'"' '/"version":/ {print $$4; exit}' deno.json)
 TAG := v$(PKG_VERSION)
 
+# bump target accepts v=X.Y.Z (short) or VERSION=X.Y.Z
+NEW_VERSION := $(or $(v),$(VERSION))
+
 .PHONY: help fmt check bump release tag-only
 
 help:
