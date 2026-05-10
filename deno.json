@@ -24,8 +24,9 @@
     "useTabs": false,
     "lineWidth": 100,
     "indentWidth": 2,
-    "singleQuote": true,
+    "singleQuote": false,
     "semiColons": true,
+    "proseWrap": "preserve",
     "exclude": ["dist/", "deno.lock"]
   },
   "lint": {
