@@ -8,7 +8,7 @@ publish packages, and manage your QuickFlo organization from your terminal.
 ### Pre-built binary (recommended, no dependencies)
 
 ```bash
-curl -fsSL https://cdn.quickflo.app/cli/install.sh | sh
+curl -fsSL https://cdn.quickflo.app/packages/cli/install.sh | sh
 ```
 
 Detects your OS + arch, downloads the matching binary, drops it in `~/.local/bin`. Supports macOS

@@ -5,9 +5,9 @@
 # Detects OS + arch, downloads the matching pre-built binary from GCS, and
 # drops it on PATH. Default install location is ~/.local/bin (no sudo needed).
 #
-#   curl -fsSL https://cdn.quickflo.app/cli/install.sh | sh                       # latest
-#   curl -fsSL https://cdn.quickflo.app/cli/install.sh | sh -s v1.0.2              # pin a version
-#   curl -fsSL https://cdn.quickflo.app/cli/install.sh | INSTALL_DIR=/usr/local/bin sh
+#   curl -fsSL https://cdn.quickflo.app/packages/cli/install.sh | sh                       # latest
+#   curl -fsSL https://cdn.quickflo.app/packages/cli/install.sh | sh -s v1.0.2              # pin a version
+#   curl -fsSL https://cdn.quickflo.app/packages/cli/install.sh | INSTALL_DIR=/usr/local/bin sh
 #
 # Env vars:
 #   INSTALL_DIR        — destination directory (default: ~/.local/bin)
@@ -15,7 +15,7 @@
 
 set -eu
 
-DEFAULT_BASE="https://cdn.quickflo.app/cli"
+DEFAULT_BASE="https://cdn.quickflo.app/packages/cli"
 
 BIN="quickflo"
 INSTALL_DIR="${INSTALL_DIR:-${HOME}/.local/bin}"
