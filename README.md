@@ -3,12 +3,20 @@
 Command-line interface for [QuickFlo](https://quickflo.app) — push and pull workflows, install and
 publish packages, and manage your QuickFlo organization from your terminal.
 
-Written in TypeScript, runs on [Deno](https://deno.com), distributed via
-[JSR](https://jsr.io/@quickflo/cli).
-
 ## Install
 
-Requires [Deno](https://deno.com) 2+.
+### Pre-built binary (recommended, no dependencies)
+
+```bash
+curl -fsSL https://cdn.quickflo.app/cli/install.sh | sh
+```
+
+Detects your OS + arch, downloads the matching binary, drops it in `~/.local/bin`. Supports macOS
+(Intel + Apple Silicon), Linux (x86_64 + arm64), and Windows (x86_64).
+
+Pin a version: `… | sh -s v1.0.2`. Install elsewhere: `… | INSTALL_DIR=/usr/local/bin sh`.
+
+### Via JSR (requires [Deno](https://deno.com) 2+)
 
 ```bash
 deno install --global --force --name quickflo \
@@ -16,17 +24,14 @@ deno install --global --force --name quickflo \
   jsr:@quickflo/cli
 ```
 
-Make sure `~/.deno/bin` is on your `PATH`.
+Make sure `~/.deno/bin` is on your `PATH`. To upgrade later, re-run the same command — `--force`
+overwrites with the latest published version.
 
-### Upgrade
-
-Re-run the same install command. The `--force` flag overwrites the existing binary with the latest
-published version.
+### Quick start
 
 ```bash
-deno install --global --force --name quickflo \
-  --allow-net --allow-read --allow-env --allow-write \
-  jsr:@quickflo/cli
+quickflo auth login       # paste a token from Settings → Access Tokens
+quickflo workflows list   # use it
 ```
 
 ## Auth

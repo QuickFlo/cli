@@ -4,7 +4,7 @@
 # to a public GCS bucket. The matching install.sh script (also uploaded) lets
 # users install via:
 #
-#   curl -fsSL https://storage.googleapis.com/qkflo-hosted-content/packages/cli/install.sh | sh
+#   curl -fsSL https://cdn.quickflo.app/cli/install.sh | sh
 #
 # Requirements:
 #   - deno on PATH
@@ -131,7 +131,7 @@ if [[ "${UPDATE_LATEST}" == "1" ]]; then
     "gs://${BUCKET}/${BUCKET_PREFIX}/install.sh"
 fi
 
-PUBLIC_BASE="https://storage.googleapis.com/${BUCKET}/${BUCKET_PREFIX}"
+PUBLIC_BASE="https://cdn.quickflo.app/cli"
 
 echo
 echo "✓ deployed v${VERSION} to gs://${BUCKET}/${BUCKET_PREFIX}/"
