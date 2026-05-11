@@ -38,35 +38,91 @@ deno task install
 
 ## Auth
 
-The CLI authenticates with a Personal Access Token. Mint one in the QuickFlo
-web UI under **Settings → Access Tokens**, then either store it locally:
+The CLI authenticates with **Personal Access Tokens**, organized into named
+**profiles** so you can keep tokens for multiple orgs / deployments and switch
+between them with one command. Mint a token in the QuickFlo web UI under
+**Settings → Access Tokens**.
+
+### Quick start
 
 ```bash
-quickflo auth login              # paste token at the prompt (input is hidden)
-quickflo auth status             # show which token is in use and what it can access
-quickflo auth logout             # clear stored token
+quickflo auth login          # paste token (hidden input), saves as a profile
+quickflo workflows list      # uses the active profile
 ```
 
-…or set it as an env var (handy for CI):
+`auth login` probes the token via `/auth/me`, then saves it under a profile
+named after the org's SUID by default. The new profile becomes active.
+
+### Working with multiple profiles
 
 ```bash
-export QF_TOKEN=qfp_xxx…
-export QF_ORG=abcd               # only needed if the token can see multiple orgs
+quickflo auth login                  # → saves profile "acme" (auto-named)
+quickflo auth login --as personal    # → saves profile "personal" (explicit)
+
+quickflo auth list                   # show all profiles, * marks active
+#   NAME      ORG            SUID
+#   acme      Acme Corp      acme
+# * personal  My Personal    myorg
+
+quickflo auth use acme               # switch active profile
+quickflo workflows list              # → now hits acme's API + org
+
+quickflo auth logout acme            # delete a specific profile
+quickflo auth logout                 # delete the currently active one
 ```
 
-Resolution order: `QF_TOKEN` → stored token (`~/.config/quickflo/credentials.json`,
-mode `0600`, keyed by API URL) → fail with a hint pointing to `quickflo auth login`.
-
-The CLI defaults to QuickFlo's hosted production deployment. To target a
-self-hosted or local instance, override the API URL:
+### Per-command overrides
 
 ```bash
-export QF_API_URL=https://my-quickflo.example.com/api
+QF_PROFILE=acme quickflo workflows list      # one-shot profile switch
+QF_TOKEN=qfp_… quickflo workflows list       # bypass profiles entirely (CI use)
 ```
 
-Tokens are bound to the org they were minted in, so `-o`/`QF_ORG` becomes
-optional once you've logged in — the CLI auto-resolves the org for you. Pass
-`-o <suid>` only when the token grants access to multiple orgs.
+### Resolution order
+
+1. **`QF_TOKEN`** env var — ad-hoc one-shot, pairs with `QF_API_URL`. Bypasses profiles.
+2. **`QF_PROFILE`** env var — session-scoped override of the active profile.
+3. **`currentProfile`** in `~/.config/quickflo/credentials.json` — long-lived selection.
+4. Fail with a hint listing available profiles or pointing to `quickflo auth login`.
+
+### Where it's stored
+
+Profiles live at `$XDG_CONFIG_HOME/quickflo/credentials.json` (mode `0600`).
+Each profile bundles its api URL + token + cached org metadata, so switching
+profiles switches everything in one move.
+
+```json
+{
+  "version": 2,
+  "currentProfile": "acme",
+  "profiles": {
+    "acme": {
+      "apiUrl": "https://go.quickflo.app/api",
+      "token": "qfp_…",
+      "orgSuid": "acme",
+      "orgName": "Acme Corp",
+      "savedAt": "2026-05-11T…"
+    }
+  }
+}
+```
+
+### Targeting self-hosted deployments
+
+Pass `--api-url` at login time (it gets bundled into the profile, no need to
+re-pass it on every command):
+
+```bash
+quickflo auth login --api-url https://my-quickflo.example.com/api --as self-hosted
+quickflo auth use self-hosted
+quickflo workflows list   # automatically uses the self-hosted URL
+```
+
+### Org scoping
+
+PATs are bound to one org at mint time, so `-o`/`QF_ORG` is **not required**
+for typical CLI use — the profile already knows the org. Pass `-o <suid>` only
+when the token can access multiple orgs (e.g. an account-scoped token).
 
 ## Workflows
 
@@ -189,15 +245,25 @@ quickflo workflows list -j | jq '.[].name'       # clean pipe
 quickflo workflows push -d ./wf -w > urls.txt   # just URL + secret lines
 ```
 
-## Flags every command takes
+## Flags and env vars
 
-| short | long        | env          |
-| ----- | ----------- | ------------ |
-| `-o`  | `--org`     | `QF_ORG`     |
-| —     | `--api-url` | `QF_API_URL` |
+Per-command:
 
-Auth is taken from `QF_TOKEN` or the stored credential — never from a flag, so
-tokens never end up in shell history. See [Auth](#auth) above.
+| short | long        | env          | notes                                          |
+| ----- | ----------- | ------------ | ---------------------------------------------- |
+| `-o`  | `--org`     | `QF_ORG`     | Usually unnecessary — profile knows the org    |
+| —     | `--api-url` | `QF_API_URL` | Only used by `auth login` and `QF_TOKEN` paths |
+
+Auth-related:
+
+| env          | purpose                                                   |
+| ------------ | --------------------------------------------------------- |
+| `QF_PROFILE` | Override the active profile for this shell session        |
+| `QF_TOKEN`   | One-shot token, bypasses profiles entirely (CI use)       |
+| `QF_API_URL` | Paired with `QF_TOKEN`; sets the API URL for the one-shot |
+
+Tokens are never passed via flag — they live in env vars or the credentials
+file. Keeps shell history clean and `--help` output safe to paste publicly.
 
 ## Development
 

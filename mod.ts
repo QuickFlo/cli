@@ -15,7 +15,7 @@
  */
 
 import { Command, EnumType } from '@cliffy/command';
-import { runAuthLogin, runAuthLogout, runAuthStatus } from './src/auth.ts';
+import { runAuthList, runAuthLogin, runAuthLogout, runAuthStatus, runAuthUse } from './src/auth.ts';
 import { runWorkflowsPush } from './src/workflows-push.ts';
 import { runWorkflowsPull } from './src/workflows-pull.ts';
 import { runWorkflowsList } from './src/workflows-list.ts';
@@ -29,10 +29,18 @@ const byType = new EnumType(['id', 'suid', 'name']);
 
 const authLogin = new Command()
   .description(
-    'Sign in by pasting an access token (mint one in the QuickFlo web UI under Settings → Access Tokens). Saves to ~/.config/quickflo/credentials.json.',
+    'Sign in by pasting an access token (mint one in the QuickFlo web UI under Settings → Access Tokens). Saves as a named profile and makes it active.',
   )
-  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .example('Sign in to prod', 'quickflo auth login')
+  .option('--api-url <url:string>', 'API base URL the token belongs to (or set QF_API_URL)')
+  .option(
+    '--as <name:string>',
+    'Profile name to save under. Defaults to the org SUID.',
+  )
+  .example('Sign in (auto-named from org SUID)', 'quickflo auth login')
+  .example(
+    'Sign in with an explicit profile name',
+    'quickflo auth login --as personal',
+  )
   .example(
     'Sign in to a self-hosted deployment',
     'quickflo auth login --api-url https://quickflo.example.com/api',
@@ -40,34 +48,50 @@ const authLogin = new Command()
   .action(async (opts) => {
     await runAuthLogin({
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      as: opts.as,
     });
   });
 
 const authLogout = new Command()
-  .description('Clear the stored access token for the current API URL.')
-  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .action(async (opts) => {
-    await runAuthLogout({
-      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
-    });
+  .description(
+    'Remove a profile. With no argument, removes the active profile.',
+  )
+  .arguments('[profile:string]')
+  .action(async (_opts, profile) => {
+    await runAuthLogout({ profile });
   });
 
 const authStatus = new Command()
   .description(
-    'Show the current sign-in state: which token (env vs stored) and which orgs it can access.',
+    'Show the active profile (or QF_TOKEN env) and verify the token still works.',
   )
-  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-j, --json', 'Emit JSON instead of the table', { default: false })
   .action(async (opts) => {
-    await runAuthStatus({
-      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
-    });
+    await runAuthStatus({ json: opts.json });
+  });
+
+const authList = new Command()
+  .description('List saved profiles. The active one is marked with *.')
+  .option('-j, --json', 'Emit JSON instead of the table', { default: false })
+  .action(async (opts) => {
+    await runAuthList({ json: opts.json });
+  });
+
+const authUse = new Command()
+  .description('Switch the active profile.')
+  .arguments('<name:string>')
+  .example('Switch to a saved profile', 'quickflo auth use acme')
+  .action(async (_opts, name) => {
+    await runAuthUse({ name });
   });
 
 const auth = new Command()
   .description('Manage authentication for the QuickFlo CLI.')
   .command('login', authLogin)
   .command('logout', authLogout)
-  .command('status', authStatus);
+  .command('status', authStatus)
+  .command('list', authList)
+  .command('use', authUse);
 
 const workflowsPush = new Command()
   .description('Bulk upsert workflow definitions from a directory.')
