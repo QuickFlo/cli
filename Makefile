@@ -8,7 +8,7 @@ TAG := v$(PKG_VERSION)
 # bump target accepts v=X.Y.Z (short) or VERSION=X.Y.Z
 NEW_VERSION := $(or $(v),$(NEW_VERSION))
 
-.PHONY: help fmt check bump release tag-only
+.PHONY: help fmt check bump release tag-only deploy
 
 help:
 	@printf 'Current version: %s\n\n' '$(PKG_VERSION)'
@@ -16,8 +16,9 @@ help:
 	@printf '  fmt                     deno fmt (auto-fix)\n'
 	@printf '  check                   fmt:check + lint + type check + test\n'
 	@printf '  bump v=X.Y.Z            edit deno.json, commit "chore: bump version to X.Y.Z"\n'
-	@printf '  release                 require clean main, check, push, tag %s, push tag\n' '$(TAG)'
-	@printf '  tag-only                just create + push tag %s (skip checks; for re-runs)\n' '$(TAG)'
+	@printf '  release                 clean main + check + push + tag %s + JSR (via Actions) + GCS binaries\n' '$(TAG)'
+	@printf '  tag-only                create + push tag %s + GCS binaries (skip checks; for re-runs)\n' '$(TAG)'
+	@printf '  deploy                  build cross-platform binaries and upload to GCS only\n'
 	@printf '\nTypical release flow:\n'
 	@printf '  make bump v=0.4.0 && make release\n'
 
@@ -51,9 +52,15 @@ release:
 	git push
 	git tag '$(TAG)'
 	git push origin '$(TAG)'
-	@printf '\nTagged %s. Watch: gh run watch\n' '$(TAG)'
+	@printf '\nTagged %s. JSR publish running on Actions; uploading GCS binaries now...\n' '$(TAG)'
+	$(MAKE) deploy
+	@printf '\n✓ %s released to JSR + GCS.\n' '$(TAG)'
 
 tag-only:
 	@! git rev-parse '$(TAG)' >/dev/null 2>&1 || { echo "tag-only: tag $(TAG) already exists"; exit 1; }
 	git tag '$(TAG)'
 	git push origin '$(TAG)'
+	$(MAKE) deploy
+
+deploy:
+	bash scripts/deploy.sh

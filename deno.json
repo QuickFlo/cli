@@ -12,7 +12,8 @@
     "lint": "deno lint",
     "check": "deno check mod.ts",
     "compile": "deno compile --allow-net --allow-read --allow-env --allow-write --output dist/quickflo mod.ts",
-    "compile:all": "deno run -A scripts/compile-all.ts"
+    "compile:all": "deno run -A scripts/compile-all.ts",
+    "deploy": "bash scripts/deploy.sh"
   },
   "imports": {
     "@cliffy/command": "jsr:@cliffy/command@^1.0.0",

@@ -1,63 +1,110 @@
 #!/usr/bin/env sh
 #
-# QuickFlo CLI installer — downloads the latest release binary from GitHub
-# and drops it on your PATH. Override with env vars:
+# QuickFlo CLI installer.
 #
-#   INSTALL_DIR=/usr/local/bin sh install.sh
-#   QF_VERSION=v0.3.0          sh install.sh
+# Detects OS + arch, downloads the matching pre-built binary from GCS, and
+# drops it on PATH. Default install location is ~/.local/bin (no sudo needed).
 #
+#   curl -fsSL https://storage.googleapis.com/qkflo-hosted-content/packages/cli/install.sh | sh
+#   curl -fsSL https://storage.googleapis.com/qkflo-hosted-content/packages/cli/install.sh | sh -s v1.0.1
+#   curl -fsSL https://storage.googleapis.com/qkflo-hosted-content/packages/cli/install.sh | INSTALL_DIR=/usr/local/bin sh
+#
+# Env vars:
+#   INSTALL_DIR        — destination directory (default: ~/.local/bin)
+#   QF_DOWNLOAD_BASE   — override the download root
+
 set -eu
 
-REPO="QuickFlo/cli"
+DEFAULT_BASE="https://storage.googleapis.com/qkflo-hosted-content/packages/cli"
+
 BIN="quickflo"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
-VERSION="${QF_VERSION:-latest}"
+INSTALL_DIR="${INSTALL_DIR:-${HOME}/.local/bin}"
+DOWNLOAD_BASE="${QF_DOWNLOAD_BASE:-${DEFAULT_BASE}}"
+VERSION="${1:-latest}"
 
-err() { printf 'install: %s\n' "$1" >&2; exit 1; }
+# Detect OS + arch.
+os="$(uname -s)"
+arch="$(uname -m)"
 
-uname_s=$(uname -s)
-uname_m=$(uname -m)
-
-case "$uname_s" in
-  Darwin) os=apple-darwin ;;
-  Linux)  os=unknown-linux-gnu ;;
-  *) err "unsupported OS: $uname_s (use the Deno install path or download manually)" ;;
+case "${os}" in
+  Darwin)
+    case "${arch}" in
+      arm64|aarch64) target="aarch64-apple-darwin" ;;
+      x86_64)        target="x86_64-apple-darwin" ;;
+      *) echo "Unsupported macOS arch: ${arch}" >&2; exit 1 ;;
+    esac
+    archive_ext="tar.gz"
+    ;;
+  Linux)
+    case "${arch}" in
+      x86_64)         target="x86_64-unknown-linux-gnu" ;;
+      aarch64|arm64)  target="aarch64-unknown-linux-gnu" ;;
+      *) echo "Unsupported Linux arch: ${arch}" >&2; exit 1 ;;
+    esac
+    archive_ext="tar.gz"
+    ;;
+  MINGW*|MSYS*|CYGWIN*)
+    target="x86_64-pc-windows-msvc"
+    archive_ext="zip"
+    BIN="quickflo.exe"
+    ;;
+  *)
+    echo "Unsupported OS: ${os}. Use 'deno install jsr:@quickflo/cli' instead." >&2
+    exit 1
+    ;;
 esac
 
-case "$uname_m" in
-  x86_64|amd64) arch=x86_64 ;;
-  arm64|aarch64) arch=aarch64 ;;
-  *) err "unsupported arch: $uname_m" ;;
-esac
-
-target="${arch}-${os}"
-asset="${BIN}-${VERSION}-${target}.tar.gz"
-
-if [ "$VERSION" = "latest" ]; then
-  url="https://github.com/${REPO}/releases/latest/download/${asset}"
-  # GitHub returns the asset filename with the actual version baked in;
-  # the redirect handles it.
-  url="https://github.com/${REPO}/releases/latest/download/$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n "s/.*\"name\": *\"\\(${BIN}-v[^\"]*-${target}.tar.gz\\)\".*/\\1/p" | head -n1)"
-  if [ -z "${url##*/}" ]; then
-    err "could not resolve latest release asset for ${target}"
-  fi
+# Resolve URL prefix.
+if [ "${VERSION}" = "latest" ]; then
+  prefix="${DOWNLOAD_BASE}/latest"
 else
-  url="https://github.com/${REPO}/releases/download/${VERSION}/${asset}"
+  prefix="${DOWNLOAD_BASE}/${VERSION}"
 fi
 
-mkdir -p "$INSTALL_DIR"
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+archive="quickflo-${VERSION}-${target}.${archive_ext}"
+if [ "${VERSION}" = "latest" ]; then
+  # Versioned-name lookup inside the /latest/ directory: read VERSION file
+  # first so we know the exact archive name to download.
+  resolved_version="$(curl -fsSL "${prefix}/VERSION")"
+  archive="quickflo-v${resolved_version}-${target}.${archive_ext}"
+fi
 
-printf 'Downloading %s\n' "$url"
-curl -fsSL "$url" -o "$tmp/asset.tar.gz"
+url="${prefix}/${archive}"
 
-tar -xzf "$tmp/asset.tar.gz" -C "$tmp"
-mv "$tmp/$BIN" "$INSTALL_DIR/$BIN"
-chmod +x "$INSTALL_DIR/$BIN"
+echo "Installing QuickFlo CLI"
+echo "  Target: ${target}"
+echo "  From:   ${url}"
+echo "  To:     ${INSTALL_DIR}/${BIN}"
 
-printf '\nInstalled %s to %s/%s\n' "$BIN" "$INSTALL_DIR" "$BIN"
-case ":$PATH:" in
-  *":$INSTALL_DIR:"*) ;;
-  *) printf '\nNote: %s is not on your PATH. Add this to your shell rc:\n  export PATH="%s:$PATH"\n' "$INSTALL_DIR" "$INSTALL_DIR" ;;
+# Download + extract to a temp dir.
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp}"' EXIT
+
+curl -fsSL "${url}" -o "${tmp}/${archive}"
+
+case "${archive_ext}" in
+  tar.gz) tar -xzf "${tmp}/${archive}" -C "${tmp}" ;;
+  zip)    unzip -q "${tmp}/${archive}" -d "${tmp}" ;;
 esac
+
+mkdir -p "${INSTALL_DIR}"
+mv "${tmp}/${BIN}" "${INSTALL_DIR}/${BIN}"
+chmod +x "${INSTALL_DIR}/${BIN}"
+
+echo
+echo "✓ Installed quickflo to ${INSTALL_DIR}/${BIN}"
+
+# PATH check.
+case ":${PATH}:" in
+  *":${INSTALL_DIR}:"*) ;;
+  *)
+    echo
+    echo "Note: ${INSTALL_DIR} is not on your PATH."
+    echo "  Add this to your shell rc file:"
+    echo "    export PATH=\"${INSTALL_DIR}:\$PATH\""
+    ;;
+esac
+
+echo
+echo "Run:"
+echo "  quickflo auth login"

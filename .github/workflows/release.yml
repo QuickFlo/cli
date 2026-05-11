@@ -5,86 +5,11 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
   id-token: write
 
 jobs:
-  build:
-    name: build (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive: tar.gz
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive: tar.gz
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            archive: tar.gz
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            archive: tar.gz
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            archive: zip
-    steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      - name: Compile
-        shell: bash
-        run: |
-          mkdir -p dist
-          OUT="dist/quickflo"
-          if [[ "${{ matrix.target }}" == *windows* ]]; then OUT="$OUT.exe"; fi
-          deno compile \
-            --allow-net --allow-read --allow-env --allow-write \
-            --target ${{ matrix.target }} \
-            --output "$OUT" \
-            mod.ts
-
-      - name: Package (tar.gz)
-        if: matrix.archive == 'tar.gz'
-        shell: bash
-        run: |
-          cd dist && tar -czf "quickflo-${{ github.ref_name }}-${{ matrix.target }}.tar.gz" quickflo
-
-      - name: Package (zip)
-        if: matrix.archive == 'zip'
-        shell: bash
-        run: |
-          cd dist && 7z a "quickflo-${{ github.ref_name }}-${{ matrix.target }}.zip" quickflo.exe
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: quickflo-${{ matrix.target }}
-          path: dist/quickflo-*.${{ matrix.archive }}
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Generate checksums
-        run: cd dist && sha256sum quickflo-* > SHA256SUMS
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          generate_release_notes: true
-
   publish-jsr:
-    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
