@@ -4,21 +4,11 @@ Command-line interface for [QuickFlo](https://quickflo.app) — push and pull wo
 publish packages, and manage your QuickFlo organization from your terminal.
 
 Written in TypeScript, runs on [Deno](https://deno.com), distributed via
-[JSR](https://jsr.io/@quickflo/cli) and pre-built binaries.
+[JSR](https://jsr.io/@quickflo/cli).
 
 ## Install
 
-### Pre-built binary (recommended)
-
-Download the binary for your platform from the
-[latest release](https://github.com/QuickFlo/cli/releases/latest) and put it on your `PATH`. macOS /
-Linux one-liner:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/QuickFlo/cli/main/install.sh | sh
-```
-
-### From JSR (requires Deno 2+)
+Requires [Deno](https://deno.com) 2+.
 
 ```bash
 deno install --global --force --name quickflo \
@@ -28,12 +18,15 @@ deno install --global --force --name quickflo \
 
 Make sure `~/.deno/bin` is on your `PATH`.
 
-### From source
+### Upgrade
+
+Re-run the same install command. The `--force` flag overwrites the existing binary with the latest
+published version.
 
 ```bash
-git clone https://github.com/QuickFlo/cli.git
-cd cli
-deno task install
+deno install --global --force --name quickflo \
+  --allow-net --allow-read --allow-env --allow-write \
+  jsr:@quickflo/cli
 ```
 
 ## Auth
