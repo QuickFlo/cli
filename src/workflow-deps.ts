@@ -72,6 +72,10 @@ export interface TopoResult {
    * topological ordering exists for them). Surface as a warning.
    */
   cycles: string[][];
+  /** filename → set of in-set dep filenames it must wait on (forward edges). */
+  deps: Map<string, Set<string>>;
+  /** filename → set of in-set filenames that depend on it (reverse edges). */
+  dependents: Map<string, Set<string>>;
 }
 
 export class DuplicateKeyError extends Error {
@@ -273,19 +277,27 @@ export function topoSortFiles(nodes: PushFileNode[]): TopoResult {
   }
 
   // Edges: dependency → dependent (if A references B, then B → A).
+  // `dependents` is the reverse map (target → who depends on it); `deps` is
+  // the forward map (file → what it depends on). Both are needed downstream:
+  // topo sort uses `dependents` to release children, the parallel pusher uses
+  // `deps` to initialize per-file in-degree and `dependents` to wake waiters.
   const dependents = new Map<string, Set<string>>();
+  const deps = new Map<string, Set<string>>();
   const inDegree = new Map<string, number>();
   const unresolved: TopoResult['unresolved'] = [];
   for (const node of nodes) {
     dependents.set(node.filename, new Set());
+    deps.set(node.filename, new Set());
     inDegree.set(node.filename, 0);
   }
 
   const addEdge = (targetFile: string, dependentFile: string): void => {
-    const deps = dependents.get(targetFile);
-    if (!deps) return;
-    if (deps.has(dependentFile)) return;
-    deps.add(dependentFile);
+    const ds = dependents.get(targetFile);
+    const dp = deps.get(dependentFile);
+    if (!ds || !dp) return;
+    if (ds.has(dependentFile)) return;
+    ds.add(dependentFile);
+    dp.add(targetFile);
     inDegree.set(dependentFile, (inDegree.get(dependentFile) ?? 0) + 1);
   };
 
@@ -361,7 +373,7 @@ export function topoSortFiles(nodes: PushFileNode[]): TopoResult {
     }
   }
 
-  return { order, unresolved, cycles };
+  return { order, unresolved, cycles, deps, dependents };
 }
 
 function lowerBound(arr: string[], value: string): number {

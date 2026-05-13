@@ -257,21 +257,28 @@ function regenerateSecret(
   );
 }
 
+type LogFn = (msg: string) => void;
+
+/**
+ * Pushes one workflow file. Output goes through `log` (not console.error
+ * directly) so callers can buffer per-file output and flush atomically —
+ * essential for parallel mode where many pushes interleave.
+ *
+ * The caller is responsible for the leading `[filename] → name` header so
+ * it can prepend progress counters or other per-call context.
+ */
 async function pushWorkflowFile(
   client: ApiClient,
   filename: string,
   def: WorkflowDefinition,
   opts: { dryRun: boolean; createTriggers: boolean; regenerateSecrets: boolean },
+  log: LogFn,
 ): Promise<PushResult> {
-  console.error(
-    `\n${colors.bold(`[${filename}]`)} → ${colors.cyan(def.name)}`,
-  );
-
   if (opts.dryRun) {
     const triggerNote = opts.createTriggers
       ? ' + webhook trigger'
       : ' (workflow only — pass -t to also create webhook)';
-    console.error(
+    log(
       `  ${colors.dim(`(dry-run) would create/update workflow${triggerNote}`)}`,
     );
     return {
@@ -292,15 +299,11 @@ async function pushWorkflowFile(
   if (existing) {
     wf = await updateWorkflow(client, existing.id, def);
     action = 'updated';
-    console.error(
-      `  ${colors.green('✓')} updated workflow ${colors.dim(wf.id)}`,
-    );
+    log(`  ${colors.green('✓')} updated workflow ${colors.dim(wf.id)}`);
   } else {
     wf = await createWorkflow(client, def);
     action = 'created';
-    console.error(
-      `  ${colors.green('✓')} created workflow ${colors.dim(wf.id)}`,
-    );
+    log(`  ${colors.green('✓')} created workflow ${colors.dim(wf.id)}`);
   }
 
   let triggerAction: PushResult['triggerAction'] = 'skipped';
@@ -328,16 +331,16 @@ async function pushWorkflowFile(
         const regen = await regenerateSecret(client, wf.id, webhookTrigger.id);
         secret = regen.config?.webhook?.secret;
         triggerAction = 'regenerated';
-        console.error(`  ${colors.green('✓')} regenerated trigger secret`);
+        log(`  ${colors.green('✓')} regenerated trigger secret`);
       } catch (e) {
         triggerAction = 'failed';
-        console.error(
+        log(
           `  ${colors.red('✗')} failed to regenerate secret: ${(e as Error).message}`,
         );
       }
     } else {
       triggerAction = 'existing';
-      console.error(
+      log(
         `  ${colors.dim('•')} webhook trigger already exists (using stored secret)`,
       );
     }
@@ -347,10 +350,10 @@ async function pushWorkflowFile(
       webhookUrl = created.webhookUrl;
       secret = created.config?.webhook?.secret;
       triggerAction = 'created';
-      console.error(`  ${colors.green('✓')} created webhook trigger`);
+      log(`  ${colors.green('✓')} created webhook trigger`);
     } catch (e) {
       triggerAction = 'failed';
-      console.error(
+      log(
         `  ${colors.red('✗')} failed to create trigger: ${(e as Error).message}`,
       );
     }
@@ -365,6 +368,139 @@ async function pushWorkflowFile(
     webhookUrl,
     secret,
   };
+}
+
+/**
+ * Worker-pool push that respects the sub-workflow dep graph. Up to
+ * `concurrency` files are in flight at once; a file only starts when every
+ * file it depends on (within the push set) has completed.
+ *
+ * Cycle members can never have their deps resolved (they reference each
+ * other), so they're treated as having zero remaining deps — same contract
+ * as the sequential path, which appends them in alpha order. The engine's
+ * runtime depth guard is what actually prevents recursive blowup.
+ *
+ * Per-file output is buffered and flushed atomically at completion so the
+ * log stays readable even at high concurrency. The counter shows completion
+ * order (which equals topo position at concurrency=1).
+ */
+async function pushParallel(
+  client: ApiClient,
+  ordered: PushFileNode[],
+  parsedDefs: Map<string, WorkflowDefinition>,
+  graph: {
+    deps: Map<string, Set<string>>;
+    dependents: Map<string, Set<string>>;
+  },
+  cycles: string[][],
+  concurrency: number,
+  opts: { dryRun: boolean; createTriggers: boolean; regenerateSecrets: boolean },
+): Promise<PushResult[]> {
+  const total = ordered.length;
+  const results: PushResult[] = [];
+  if (total === 0) return results;
+
+  const cycleMembers = new Set(cycles.flat());
+  const byFilename = new Map(ordered.map((n) => [n.filename, n]));
+
+  const inDegree = new Map<string, number>();
+  for (const node of ordered) {
+    const cnt = cycleMembers.has(node.filename) ? 0 : (graph.deps.get(node.filename)?.size ?? 0);
+    inDegree.set(node.filename, cnt);
+  }
+
+  // Stable order: alpha within a level so output is deterministic at
+  // concurrency=1 (matches the existing sequential behavior).
+  const ready: string[] = [];
+  for (const [fname, deg] of inDegree) {
+    if (deg === 0) ready.push(fname);
+  }
+  ready.sort();
+
+  const counterWidth = String(total).length;
+  let completed = 0;
+  const waiters: Array<() => void> = [];
+  const wake = (): void => {
+    const w = waiters.shift();
+    if (w) w();
+  };
+  const wakeAll = (): void => {
+    for (const w of waiters.splice(0)) w();
+  };
+  const wait = (): Promise<void> =>
+    new Promise<void>((resolve) => {
+      waiters.push(resolve);
+    });
+
+  const insertReady = (filename: string): void => {
+    // Binary-search insert keeps `ready` alpha-sorted for stable scheduling.
+    let lo = 0;
+    let hi = ready.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (ready[mid] < filename) lo = mid + 1;
+      else hi = mid;
+    }
+    ready.splice(lo, 0, filename);
+  };
+
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const filename = ready.shift();
+      if (!filename) {
+        if (completed === total) {
+          wakeAll();
+          return;
+        }
+        await wait();
+        continue;
+      }
+
+      const node = byFilename.get(filename);
+      if (!node) continue;
+      const short = node.filename.split('/').pop() || node.filename;
+      const def = parsedDefs.get(node.filename);
+
+      const buf: string[] = [];
+      const log: LogFn = (m) => buf.push(m);
+      let errorMessage: string | undefined;
+
+      try {
+        if (!def) throw new Error('definition not loaded');
+        const r = await pushWorkflowFile(client, short, def, opts, log);
+        results.push(r);
+      } catch (e) {
+        errorMessage = (e as Error).message;
+      }
+
+      completed++;
+      const counter = `[${String(completed).padStart(counterWidth)}/${total}]`;
+      const displayName = def?.name ?? short;
+      console.error(
+        `\n${counter} ${colors.bold(`[${short}]`)} → ${colors.cyan(displayName)}`,
+      );
+      if (errorMessage) {
+        console.error(`  ${colors.red('✗')} ${errorMessage}`);
+      }
+      if (buf.length > 0) console.error(buf.join('\n'));
+
+      for (const child of graph.dependents.get(node.filename) ?? []) {
+        if (cycleMembers.has(child)) continue;
+        const rem = (inDegree.get(child) ?? 0) - 1;
+        inDegree.set(child, rem);
+        if (rem === 0) {
+          insertReady(child);
+          wake();
+        }
+      }
+
+      if (completed === total) wakeAll();
+    }
+  };
+
+  const n = Math.max(1, Math.min(concurrency, total));
+  await Promise.all(Array.from({ length: n }, () => worker()));
+  return results;
 }
 
 // Stdout: user-capturable payload (URL + secret per trigger).
@@ -410,6 +546,14 @@ export interface WorkflowsPushOptions {
   dryRun: boolean;
   createTriggers: boolean;
   regenerateSecrets: boolean;
+  /**
+   * Max files pushed in parallel. Workers respect the sub-workflow dep
+   * graph — a file only starts after every file it depends on has finished.
+   * 1 = strictly sequential (legacy behavior). Default 8 is a safe balance
+   * for typical org-size pushes; bump to 32–64 for large independent sets
+   * (1k+ workflows with few cross-refs).
+   */
+  concurrency?: number;
 }
 
 export async function runWorkflowsPush(
@@ -417,10 +561,12 @@ export async function runWorkflowsPush(
 ): Promise<void> {
   const { client } = await openSession(opts, 'push');
   const dir = resolve(opts.dir);
+  const concurrency = Math.max(1, opts.concurrency ?? 8);
   console.error(`  Dir:  ${dir}`);
   console.error(
     `  Mode: ${opts.dryRun ? colors.yellow('DRY RUN') : colors.green('LIVE')}`,
   );
+  console.error(`  Concurrency: ${colors.bold(String(concurrency))}`);
 
   let dirInfo;
   try {
@@ -453,7 +599,10 @@ export async function runWorkflowsPush(
 
   // Parse every file up-front so we can topo-sort by sub-workflow deps
   // and fail fast on cycles / duplicate keys before any network call.
+  // The full parsed def is retained per-file so the worker pool doesn't
+  // re-read and re-parse during push.
   const nodes: PushFileNode[] = [];
+  const parsedDefs = new Map<string, WorkflowDefinition>();
   const parseErrors: Array<{ filename: string; error: Error }> = [];
   for (const filePath of files) {
     const filename = filePath.split('/').pop() || filePath;
@@ -463,6 +612,7 @@ export async function runWorkflowsPush(
       if (!def.name) {
         throw new Error(`missing 'name' field`);
       }
+      parsedDefs.set(filePath, def);
       nodes.push({
         filename: filePath,
         def: { id: def.id, name: def.name, steps: def.steps },
@@ -479,11 +629,15 @@ export async function runWorkflowsPush(
   let ordered: PushFileNode[];
   let unresolved: ReturnType<typeof topoSortFiles>['unresolved'];
   let cycles: string[][];
+  let deps: Map<string, Set<string>>;
+  let dependents: Map<string, Set<string>>;
   try {
     const sorted = topoSortFiles(nodes);
     ordered = sorted.order;
     unresolved = sorted.unresolved;
     cycles = sorted.cycles;
+    deps = sorted.deps;
+    dependents = sorted.dependents;
   } catch (e) {
     if (e instanceof DuplicateKeyError) {
       console.error(
@@ -551,23 +705,19 @@ export async function runWorkflowsPush(
     }
   }
 
-  const results: PushResult[] = [];
-  for (const node of ordered) {
-    const filename = node.filename.split('/').pop() || node.filename;
-    try {
-      const raw = await Deno.readTextFile(node.filename);
-      const def = JSON.parse(raw) as WorkflowDefinition;
-      results.push(
-        await pushWorkflowFile(client, filename, def, {
-          dryRun: opts.dryRun,
-          createTriggers: opts.createTriggers,
-          regenerateSecrets: opts.regenerateSecrets,
-        }),
-      );
-    } catch (e) {
-      console.error(`  ${colors.red('✗')} ${(e as Error).message}`);
-    }
-  }
+  const results = await pushParallel(
+    client,
+    ordered,
+    parsedDefs,
+    { deps, dependents },
+    cycles,
+    concurrency,
+    {
+      dryRun: opts.dryRun,
+      createTriggers: opts.createTriggers,
+      regenerateSecrets: opts.regenerateSecrets,
+    },
+  );
 
   printSummary(results, opts.createTriggers);
   if (!opts.dryRun && opts.createTriggers) {

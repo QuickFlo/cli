@@ -118,11 +118,20 @@ const workflowsPush = new Command()
   .option('--dry-run', 'Print the plan without making any changes', {
     default: false,
   })
+  .option(
+    '-c, --concurrency <n:number>',
+    'Max workflows to push in parallel. Respects sub-workflow dep order — a file only starts after its in-set deps finish. 1 = strictly sequential.',
+    { default: 8 },
+  )
   .example(
     'Push + create triggers',
     'quickflo workflows push -d ./my-workflows -w -o abcd',
   )
   .example('Dry-run', 'quickflo workflows push --dry-run -o abcd')
+  .example(
+    'High-concurrency bulk push',
+    'quickflo workflows push -d ./my-workflows -c 32 -o abcd',
+  )
   .action(async (opts) => {
     await runWorkflowsPush({
       dir: opts.dir,
@@ -131,6 +140,7 @@ const workflowsPush = new Command()
       dryRun: opts.dryRun,
       createTriggers: opts.createTriggers,
       regenerateSecrets: opts.regenerateSecrets,
+      concurrency: opts.concurrency,
     });
   });
 
