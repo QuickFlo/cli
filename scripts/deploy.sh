@@ -69,30 +69,69 @@ echo
 rm -rf "${DIST_DIR}"
 mkdir -p "${DIST_DIR}"
 
-for target in "${TARGETS[@]}"; do
-  echo "▶ build ${target}"
-  out_name="quickflo"
-  if [[ "${target}" == *windows* ]]; then
-    out_name="quickflo.exe"
-  fi
+# Warm the module cache once so parallel `deno compile` runs don't race on
+# the same dependency downloads. Cheap no-op when the cache is already warm.
+( cd "${REPO_ROOT}" && deno cache --quiet mod.ts )
+
+# Build + archive one target. Each target writes to its own staging dir so
+# parallel invocations can't clobber each other's `quickflo` output, then
+# the final archive lands directly in DIST_DIR with a target-tagged name.
+build_and_package() {
+  local target="$1"
+  local out_name="quickflo"
+  [[ "${target}" == *windows* ]] && out_name="quickflo.exe"
+
+  local stage_dir="${DIST_DIR}/.stage-${target}"
+  mkdir -p "${stage_dir}"
 
   ( cd "${REPO_ROOT}" && deno compile \
       --quiet \
       --allow-net --allow-read --allow-env --allow-write \
       --target "${target}" \
-      --output "${DIST_DIR}/${out_name}" \
+      --output "${stage_dir}/${out_name}" \
       mod.ts )
 
-  # Archive: tar.gz for everything except Windows (zip)
-  archive_name="quickflo-v${VERSION}-${target}"
+  local archive_name="quickflo-v${VERSION}-${target}"
   if [[ "${target}" == *windows* ]]; then
-    ( cd "${DIST_DIR}" && zip -q "${archive_name}.zip" "${out_name}" )
-    rm "${DIST_DIR}/${out_name}"
+    ( cd "${stage_dir}" && zip -q "${DIST_DIR}/${archive_name}.zip" "${out_name}" )
   else
-    ( cd "${DIST_DIR}" && tar -czf "${archive_name}.tar.gz" "${out_name}" )
-    rm "${DIST_DIR}/${out_name}"
+    ( cd "${stage_dir}" && tar -czf "${DIST_DIR}/${archive_name}.tar.gz" "${out_name}" )
+  fi
+
+  rm -rf "${stage_dir}"
+}
+
+echo "▶ building ${#TARGETS[@]} targets in parallel"
+
+declare -a build_pids=()
+declare -a build_logs=()
+for target in "${TARGETS[@]}"; do
+  log="${DIST_DIR}/.build-${target}.log"
+  build_logs+=("${log}")
+  ( build_and_package "${target}" ) >"${log}" 2>&1 &
+  build_pids+=($!)
+done
+
+# Wait on each PID and surface failures. We don't `set +e` because `wait`
+# returns the child's exit code without tripping the shell's errexit —
+# this loop is the explicit error boundary.
+build_failed=0
+for i in "${!build_pids[@]}"; do
+  target="${TARGETS[$i]}"
+  if wait "${build_pids[$i]}"; then
+    echo "  ✓ ${target}"
+  else
+    echo "  ✗ ${target} — log follows:"
+    sed 's/^/    /' "${build_logs[$i]}"
+    build_failed=1
   fi
 done
+rm -f "${DIST_DIR}"/.build-*.log
+
+if [[ "${build_failed}" == "1" ]]; then
+  echo "ERROR: one or more builds failed" >&2
+  exit 1
+fi
 
 # Checksums for the version's archives.
 ( cd "${DIST_DIR}" && shasum -a 256 quickflo-v"${VERSION}"-* > SHA256SUMS )
