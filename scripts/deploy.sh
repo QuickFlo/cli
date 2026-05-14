@@ -145,29 +145,70 @@ ls -lh "${DIST_DIR}" | tail -n +2
 VERSIONED_PREFIX="gs://${BUCKET}/${BUCKET_PREFIX}/v${VERSION}"
 LATEST_PREFIX="gs://${BUCKET}/${BUCKET_PREFIX}/latest"
 
-# Versioned: long cache (immutable artifacts).
+# Precompute the VERSION pointer up-front so the latest-upload subshell
+# doesn't have to (and so a `--skip-latest` run doesn't write the file).
+if [[ "${UPDATE_LATEST}" == "1" ]]; then
+  echo -n "${VERSION}" > "${DIST_DIR}/VERSION"
+fi
+
+# Dispatch each independent `gcloud storage cp` in the background. They
+# target different prefixes/files so there's no ordering constraint —
+# gcloud already parallelizes within one cp; this overlaps the three cps.
+declare -a upload_pids=()
+declare -a upload_logs=()
+declare -a upload_labels=()
+
+start_upload() {
+  local label="$1"; shift
+  local log="${DIST_DIR}/.upload-${label}.log"
+  upload_labels+=("${label}")
+  upload_logs+=("${log}")
+  ( "$@" ) >"${log}" 2>&1 &
+  upload_pids+=($!)
+}
+
 echo
-echo "▶ upload versioned to ${VERSIONED_PREFIX}/"
-gcloud storage cp \
-  --cache-control="public, max-age=31536000, immutable" \
-  "${DIST_DIR}"/*.tar.gz "${DIST_DIR}"/*.zip "${DIST_DIR}/SHA256SUMS" \
-  "${VERSIONED_PREFIX}/"
+echo "▶ uploading in parallel"
+
+# Versioned: long cache (immutable artifacts).
+start_upload "versioned" \
+  gcloud storage cp \
+    --cache-control="public, max-age=31536000, immutable" \
+    "${DIST_DIR}"/*.tar.gz "${DIST_DIR}"/*.zip "${DIST_DIR}/SHA256SUMS" \
+    "${VERSIONED_PREFIX}/"
 
 if [[ "${UPDATE_LATEST}" == "1" ]]; then
   # Latest: short cache, rolls forward on every deploy.
-  echo
-  echo "▶ update ${LATEST_PREFIX}/ (rolling pointer)"
-  echo -n "${VERSION}" > "${DIST_DIR}/VERSION"
-  gcloud storage cp \
-    --cache-control="public, max-age=300" \
-    "${DIST_DIR}"/*.tar.gz "${DIST_DIR}"/*.zip "${DIST_DIR}/SHA256SUMS" "${DIST_DIR}/VERSION" \
-    "${LATEST_PREFIX}/"
+  start_upload "latest" \
+    gcloud storage cp \
+      --cache-control="public, max-age=300" \
+      "${DIST_DIR}"/*.tar.gz "${DIST_DIR}"/*.zip "${DIST_DIR}/SHA256SUMS" "${DIST_DIR}/VERSION" \
+      "${LATEST_PREFIX}/"
 
   # Always re-upload the installer so it stays in sync with the URL layout.
-  gcloud storage cp \
-    --cache-control="public, max-age=300" \
-    "${REPO_ROOT}/install.sh" \
-    "gs://${BUCKET}/${BUCKET_PREFIX}/install.sh"
+  start_upload "installer" \
+    gcloud storage cp \
+      --cache-control="public, max-age=300" \
+      "${REPO_ROOT}/install.sh" \
+      "gs://${BUCKET}/${BUCKET_PREFIX}/install.sh"
+fi
+
+upload_failed=0
+for i in "${!upload_pids[@]}"; do
+  label="${upload_labels[$i]}"
+  if wait "${upload_pids[$i]}"; then
+    echo "  ✓ ${label}"
+  else
+    echo "  ✗ ${label} — log follows:"
+    sed 's/^/    /' "${upload_logs[$i]}"
+    upload_failed=1
+  fi
+done
+rm -f "${DIST_DIR}"/.upload-*.log
+
+if [[ "${upload_failed}" == "1" ]]; then
+  echo "ERROR: one or more uploads failed" >&2
+  exit 1
 fi
 
 PUBLIC_BASE="https://cdn.quickflo.app/packages/cli"
