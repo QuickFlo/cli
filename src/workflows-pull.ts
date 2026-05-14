@@ -17,6 +17,7 @@ import {
   type TagsMode,
   type TemplateFilter,
 } from './filters.ts';
+import { resolveInstallAddresses } from './package-installs.ts';
 import { openSession } from './session.ts';
 
 /**
@@ -34,6 +35,7 @@ interface RemoteWorkflow {
   isTemplate?: boolean;
   isPublic?: boolean;
   tags?: string[];
+  packageInstallId?: string | null;
   // Loose-typed for everything else — see SERVER_MANAGED_FIELDS.
   [key: string]: unknown;
 }
@@ -224,6 +226,14 @@ export async function runWorkflowsPull(
     await Deno.mkdir(dir, { recursive: true });
   }
 
+  // Hydrate package-install IDs → "slug@version" so each pulled file's
+  // provenance is visible in the per-row log. No-op (no network call)
+  // when nothing in the result set came from a package.
+  const installIds = workflows
+    .map((w) => w.packageInstallId)
+    .filter((id): id is string => !!id);
+  const packageAddresses = await resolveInstallAddresses(client, installIds);
+
   const assignments = assignFilenames(workflows);
   const results: PullResult[] = [];
 
@@ -231,8 +241,10 @@ export async function runWorkflowsPull(
     const fullPath = join(dir, filename);
     const payload = JSON.stringify(buildFileShape(wf), null, 2) + '\n';
 
+    const pkgAddr = wf.packageInstallId ? (packageAddresses.get(wf.packageInstallId) ?? '?') : null;
+    const provenance = pkgAddr ? ` ${colors.dim(`[from ${pkgAddr}]`)}` : '';
     console.error(
-      `\n${colors.bold(`[${filename}]`)} ← ${colors.cyan(wf.name)}`,
+      `\n${colors.bold(`[${filename}]`)} ← ${colors.cyan(wf.name)}${provenance}`,
     );
 
     if (opts.dryRun) {

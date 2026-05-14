@@ -15,6 +15,7 @@ import {
   type TagsMode,
   type TemplateFilter,
 } from './filters.ts';
+import { resolveInstallAddresses } from './package-installs.ts';
 import { openSession } from './session.ts';
 
 interface WorkflowRow {
@@ -26,6 +27,7 @@ interface WorkflowRow {
   definition?: { steps?: unknown[] };
   isTemplate?: boolean;
   tags?: string[];
+  packageInstallId?: string | null;
 }
 
 interface WorkflowListResponse {
@@ -92,11 +94,17 @@ function formatDate(iso?: string): string {
   return iso.slice(0, 10);
 }
 
-function printTable(rows: WorkflowRow[]): void {
+function printTable(
+  rows: WorkflowRow[],
+  packageAddresses: Map<string, string>,
+): void {
   if (rows.length === 0) {
     console.log(colors.dim('(no workflows match)'));
     return;
   }
+  // PKG column only when at least one row originates from a package — keeps
+  // the default (org-only) view as compact as it was before.
+  const showPackageColumn = rows.some((r) => r.packageInstallId);
   const nameWidth = Math.min(
     40,
     Math.max(4, ...rows.map((r) => r.name.length)),
@@ -105,29 +113,45 @@ function printTable(rows: WorkflowRow[]): void {
     30,
     Math.max(4, ...rows.map((r) => (r.tags ?? []).join(',').length)),
   );
-  const header = [
+  const pkgWidth = showPackageColumn
+    ? Math.min(
+      30,
+      Math.max(
+        3,
+        ...rows.map((r) =>
+          r.packageInstallId ? (packageAddresses.get(r.packageInstallId) ?? '?').length : 1
+        ),
+      ),
+    )
+    : 0;
+  const headerCells = [
     'SUID'.padEnd(6),
     'NAME'.padEnd(nameWidth),
     'STEPS'.padStart(5),
     'TMPL'.padEnd(4),
     'TAGS'.padEnd(tagsWidth),
-    'UPDATED',
-  ].join('  ');
+  ];
+  if (showPackageColumn) headerCells.push('PKG'.padEnd(pkgWidth));
+  headerCells.push('UPDATED');
+  const header = headerCells.join('  ');
   console.log(colors.bold(header));
   console.log(colors.dim('─'.repeat(header.length)));
   for (const r of rows) {
     const steps = r.definition?.steps?.length ?? 0;
     const tags = (r.tags ?? []).join(',');
-    console.log(
-      [
-        (r.suid ?? '-').padEnd(6),
-        truncate(r.name, nameWidth).padEnd(nameWidth),
-        String(steps).padStart(5),
-        (r.isTemplate ? 'yes' : 'no').padEnd(4),
-        truncate(tags || '-', tagsWidth).padEnd(tagsWidth),
-        formatDate(r.updatedAt),
-      ].join('  '),
-    );
+    const cells = [
+      (r.suid ?? '-').padEnd(6),
+      truncate(r.name, nameWidth).padEnd(nameWidth),
+      String(steps).padStart(5),
+      (r.isTemplate ? 'yes' : 'no').padEnd(4),
+      truncate(tags || '-', tagsWidth).padEnd(tagsWidth),
+    ];
+    if (showPackageColumn) {
+      const addr = r.packageInstallId ? (packageAddresses.get(r.packageInstallId) ?? '?') : '-';
+      cells.push(truncate(addr, pkgWidth).padEnd(pkgWidth));
+    }
+    cells.push(formatDate(r.updatedAt));
+    console.log(cells.join('  '));
   }
 }
 
@@ -169,10 +193,17 @@ export async function runWorkflowsList(
     console.log(JSON.stringify(rows, null, 2));
     return;
   }
+
+  // Skip the install-resolve round-trip if no rows came from a package.
+  const installIds = rows
+    .map((r) => r.packageInstallId)
+    .filter((id): id is string => !!id);
+  const packageAddresses = await resolveInstallAddresses(client, installIds);
+
   console.error(
     colors.dim(
       `\n${org.name} (${org.suid ?? org.id}) — ${rows.length} workflow(s)\n`,
     ),
   );
-  printTable(rows);
+  printTable(rows, packageAddresses);
 }
