@@ -48,7 +48,15 @@ export async function resolveInstallAddresses(
   if (ids.length === 0) return out;
 
   const params = new URLSearchParams();
-  for (const id of ids) params.append('where[id][$in]', id);
+  // Backend's qs parser treats a single `where[id][$in]=<v>` as a scalar
+  // string and emits broken SQL (`in '<uuid>'` without parens). Use `$eq`
+  // for one ID and the `[]`-suffixed array form for many — mirrors the
+  // pattern already used by applyTagsFilter for $contains/$overlap.
+  if (ids.length === 1) {
+    params.set('where[id][$eq]', ids[0]);
+  } else {
+    for (const id of ids) params.append('where[id][$in][]', id);
+  }
   params.set('options[limit]', String(ids.length));
 
   const res = await apiFetch<PackageInstallsListResponse>(
