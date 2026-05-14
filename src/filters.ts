@@ -113,6 +113,22 @@ export function applyTemplateFilter(
   }
 }
 
+/**
+ * Filter workflows by whether they were installed from a package. The default
+ * is `exclude` (org-owned only) because pulling or listing package-installed
+ * rows is almost never what the user wants — push refuses to clobber them
+ * (see workflows-push.ts findWorkflowByName), so round-tripping them
+ * through pull → edit → push just produces skip-with-error noise.
+ */
+export function applyPackageFilter(
+  params: URLSearchParams,
+  includePackages: boolean,
+): void {
+  if (!includePackages) {
+    params.set('where[packageInstallId]', 'null');
+  }
+}
+
 /** How to combine multiple tags: "any" = OR (overlap), "all" = AND (contains). */
 export type TagsMode = 'any' | 'all';
 

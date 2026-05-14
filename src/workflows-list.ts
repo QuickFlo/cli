@@ -6,6 +6,7 @@
 import { colors } from '@cliffy/ansi/colors';
 import { type ApiClient, apiFetch } from './api.ts';
 import {
+  applyPackageFilter,
   applyTagsFilter,
   applyTemplateFilter,
   buildListParams,
@@ -36,6 +37,7 @@ interface FetchFilters {
   templateFilter: TemplateFilter;
   tags: string[];
   tagsMode: TagsMode;
+  includePackages: boolean;
 }
 
 async function fetchList(
@@ -47,6 +49,7 @@ async function fetchList(
     params.set('where[organizationId][$eq]', client.orgId);
     applyTemplateFilter(params, opts.templateFilter);
     applyTagsFilter(params, opts.tags, opts.tagsMode);
+    applyPackageFilter(params, opts.includePackages);
     if (!params.has('options[limit]')) {
       params.set('options[limit]', '50');
     }
@@ -64,6 +67,7 @@ async function fetchList(
     params.set('where[organizationId][$eq]', client.orgId);
     applyTemplateFilter(params, opts.templateFilter);
     applyTagsFilter(params, opts.tags, opts.tagsMode);
+    applyPackageFilter(params, opts.includePackages);
     params.set('options[limit]', String(pageSize));
     params.set('options[offset]', String(offset));
     const res = await apiFetch<WorkflowListResponse>(
@@ -138,6 +142,8 @@ export interface WorkflowsListOptions extends ListOptions {
   tags?: string | string[];
   /** Require all tags to be present (AND) rather than any (OR, default). */
   tagsAll?: boolean;
+  /** Include workflows installed from packages. Defaults to false (org-owned only). */
+  includePackages?: boolean;
 }
 
 export async function runWorkflowsList(
@@ -155,6 +161,7 @@ export async function runWorkflowsList(
     templateFilter: opts.templates ?? 'all',
     tags: parseTags(opts.tags),
     tagsMode: opts.tagsAll ? 'all' : 'any',
+    includePackages: opts.includePackages ?? false,
   });
 
   // Payload → stdout; everything else (banner, count summary) → stderr.

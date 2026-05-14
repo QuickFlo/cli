@@ -8,6 +8,7 @@ import { colors } from '@cliffy/ansi/colors';
 import { join, resolve } from '@std/path';
 import { type ApiClient, apiFetch } from './api.ts';
 import {
+  applyPackageFilter,
   applyTagsFilter,
   applyTemplateFilter,
   buildListParams,
@@ -53,6 +54,7 @@ interface PullFilters {
   templateFilter: TemplateFilter;
   tags: string[];
   tagsMode: TagsMode;
+  includePackages: boolean;
 }
 
 async function listWorkflows(
@@ -72,6 +74,7 @@ async function listWorkflows(
     params.set('where[organizationId][$eq]', client.orgId);
     applyTemplateFilter(params, filters.templateFilter);
     applyTagsFilter(params, filters.tags, filters.tagsMode);
+    applyPackageFilter(params, filters.includePackages);
     params.set('options[offset]', String(offset));
     const res = await apiFetch<WorkflowListResponse>(
       client,
@@ -176,6 +179,8 @@ export interface WorkflowsPullOptions extends ListOptions {
   templates?: TemplateFilter;
   tags?: string | string[];
   tagsAll?: boolean;
+  /** Include workflows installed from packages. Defaults to false (org-owned only). */
+  includePackages?: boolean;
 }
 
 export async function runWorkflowsPull(
@@ -191,6 +196,14 @@ export async function runWorkflowsPull(
     `  Mode: ${opts.dryRun ? colors.yellow('DRY RUN') : colors.green('LIVE')}`,
   );
 
+  const includePackages = opts.includePackages ?? false;
+  if (!includePackages) {
+    console.error(
+      colors.dim(
+        '  Scope: org-owned workflows only (pass --include-packages to also pull workflows installed from packages)',
+      ),
+    );
+  }
   const workflows = await listWorkflows(client, {
     name: opts.name,
     where: opts.where,
@@ -200,6 +213,7 @@ export async function runWorkflowsPull(
     templateFilter: opts.templates ?? 'all',
     tags: parseTags(opts.tags),
     tagsMode: opts.tagsAll ? 'all' : 'any',
+    includePackages,
   });
   console.error(
     `\nFound ${colors.bold(String(workflows.length))} workflow(s) in org`,

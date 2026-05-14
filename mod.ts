@@ -194,6 +194,11 @@ const workflowsPull = new Command()
       default: false,
     },
   )
+  .option(
+    '--include-packages',
+    'Also pull workflows installed from packages (default: org-owned only)',
+    { default: false },
+  )
   .example('Pull all', 'quickflo workflows pull -d ./my-workflows -o abcd')
   .example(
     'Pull by name substring',
@@ -226,6 +231,7 @@ const workflowsPull = new Command()
       templates: opts.templates as 'all' | 'only' | 'exclude',
       tags: opts.tags,
       tagsAll: opts.tagsAll,
+      includePackages: opts.includePackages,
     });
   });
 
@@ -269,6 +275,11 @@ const workflowsList = new Command()
       default: false,
     },
   )
+  .option(
+    '--include-packages',
+    'Also list workflows installed from packages (default: org-owned only)',
+    { default: false },
+  )
   .example('Default table', 'quickflo workflows list -o abcd')
   .example('Templates only', 'quickflo workflows list --templates only -o abcd')
   .example('Filter by tag', 'quickflo workflows list --tags stripe -o abcd')
@@ -298,6 +309,7 @@ const workflowsList = new Command()
       templates: opts.templates as 'all' | 'only' | 'exclude',
       tags: opts.tags,
       tagsAll: opts.tagsAll,
+      includePackages: opts.includePackages,
     });
   });
 
