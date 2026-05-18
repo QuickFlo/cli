@@ -206,6 +206,164 @@ A descriptor file (`pkg.json`):
 }
 ```
 
+## Connections
+
+Saved credentials (OAuth grants, API keys) for external services. Two flows:
+imperative `create`/`update` for day-to-day work, plus `pull`/`push` for
+GitOps-style bulk management of API-key types.
+
+```bash
+# Inspect
+quickflo connections list                                # table
+quickflo connections types                               # type → auth (oauth | config) → provider
+quickflo connections types schema stripe                 # JSON Schema for an API-key type
+quickflo connections types schema slack                  # { oauth: true, provider, scopes }
+
+# Create (API-key types)
+quickflo connections create --type stripe --name billing \
+  --config '{"apiKey":"sk_live_…"}'
+
+quickflo connections create --type stripe --name billing \
+  --from-file ./stripe.json
+
+# Create (OAuth-typed: opens browser, polls until consent completes)
+quickflo connections create --type slack --name prod-alerts
+# (You must already be signed into the QuickFlo web UI in your default browser.)
+
+# Update
+quickflo connections update billing --name billing-prod                  # rename
+quickflo connections update billing --config '{"apiKey":"sk_live_NEW"}'  # rotate (API-key)
+
+# Round-trip via files
+quickflo connections pull -d ./connections                # plaintext + .gitignore warning
+quickflo connections pull -d ./connections --mask         # "***" placeholders
+quickflo connections push -d ./connections                # upsert by name
+# OAuth-typed entries are skipped on both pull (written to _skipped_oauth.json)
+# and push (use `connections create` for those).
+
+# Delete
+quickflo connections delete billing-prod                  # confirm prompt
+quickflo connections delete billing-prod --yes            # no prompt
+```
+
+## Environments
+
+Per-env variable bags (config + secrets) that workflows reference at runtime.
+
+```bash
+# Inspect
+quickflo environments list
+quickflo environments vars staging                        # plaintext key/value
+quickflo environments vars staging --mask                 # keys only (no decrypt)
+
+# Create / update
+quickflo environments create --name staging
+quickflo environments create --name prod \
+  --var DATABASE_URL=postgres://… \
+  --var REDIS_URL=redis://…
+
+quickflo environments update staging --name staging-blue  # rename
+
+# Per-variable verbs
+quickflo environments set staging FEATURE_FLAG true
+quickflo environments unset staging FEATURE_FLAG
+
+# Bulk round-trip via files
+quickflo environments pull -d ./environments
+quickflo environments push -d ./environments
+quickflo environments push -d ./environments --prune      # delete remote-only vars
+
+# Delete
+quickflo environments delete staging                       # confirm prompt
+```
+
+## Triggers
+
+Webhook / schedule / event / form entry points for workflows. Live at the top
+level (`quickflo triggers <action> <workflow>`) to keep keystrokes flat.
+
+```bash
+# Inspect
+quickflo triggers list 'My Workflow'                       # workflow ref: UUID | SUID | name
+quickflo triggers get 'My Workflow' <trigger-id>          # includes computed webhookUrl/formUrl
+
+# Create
+quickflo triggers create 'My Workflow' --type webhook --name primary
+quickflo triggers create 'My Workflow' --type schedule --from-file ./daily.json
+
+# Update / toggle
+quickflo triggers update 'My Workflow' <id> --enabled false
+quickflo triggers update 'My Workflow' <id> --from-file ./new-config.json
+quickflo triggers enable 'My Workflow' <id>
+quickflo triggers disable 'My Workflow' <id>
+
+# Lifecycle
+quickflo triggers rotate-secret 'My Workflow' <id>        # secret printed once
+quickflo triggers duplicate 'My Workflow' <id> --to 'Other Workflow' --name 'Copy'
+quickflo triggers delete 'My Workflow' <id> --yes
+```
+
+## Data stores
+
+JSONB KV namespaced by table. Per-org persistent state for workflow runs.
+
+```bash
+# Tables
+quickflo data-stores tables list
+quickflo data-stores tables create cli-test
+quickflo data-stores tables delete cli-test --yes
+
+# Records
+quickflo data-stores list cli-test --prefix user:
+quickflo data-stores list cli-test --filter status:active --sort updatedAt --desc
+quickflo data-stores get cli-test user:abc                 # prints value JSON
+quickflo data-stores get cli-test user:abc --meta          # full record + timestamps
+
+quickflo data-stores set cli-test user:abc '{"name":"Acme"}'
+echo '{"name":"Acme"}' | quickflo data-stores set cli-test user:abc --from-stdin
+quickflo data-stores set cli-test session:xyz '{}' --ttl 3600
+
+quickflo data-stores delete cli-test user:abc --yes
+
+# Round-trip
+quickflo data-stores import cli-test -f ./seed.json        # batched in chunks of 500
+quickflo data-stores export cli-test --out ./snapshot.json
+```
+
+Import accepts either `[{key, value}, …]` or an object map `{key: value, …}`.
+Export always emits the array form.
+
+## Package lifecycle
+
+End-to-end loop with no UI round-trips:
+
+```bash
+# 1. Scaffold a descriptor from existing workflows
+quickflo packages init --name onboarding --roots "Welcome flow" -o myorg
+# → writes pkg.json with workflow ids resolved
+
+# 2. Publish (server builds the .qfpkg.zip from your org's resources)
+quickflo packages publish onboarding --descriptor ./pkg.json -o myorg
+
+# 3. Discover published versions
+quickflo packages list-versions @myorg/onboarding -o myorg
+
+# 4. Install into another org
+quickflo packages install @myorg/onboarding@1.0.0 -o customer-org
+# → returns the install id (UUID)
+
+# 5. Upgrade an existing install (preview by default; --apply commits)
+quickflo packages upgrade <install-id> --to 1.1.0 -o customer-org
+quickflo packages upgrade <install-id> --to 1.1.0 --apply -o customer-org
+
+# 6. Uninstall
+quickflo packages uninstall <install-id> --yes -o customer-org
+```
+
+`packages upgrade` defaults to **preview-only** — it mirrors `terraform plan` /
+`terraform apply` since reinstall is destructive (workflows can be added,
+replaced, or removed). Use `--apply` once you're satisfied with the diff.
+
 ## Filter DSL
 
 `--where <field>:<op>:<value>` — repeatable, available on every list/pull command.

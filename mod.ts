@@ -24,6 +24,54 @@ import { runPackagesList } from './src/packages-list.ts';
 import { runPackagesInstall } from './src/packages-install.ts';
 import { runPackagesPublish } from './src/packages-publish.ts';
 import { runPackagesDownload } from './src/packages-download.ts';
+import { runPackagesListVersions } from './src/packages-versions.ts';
+import { runPackagesUninstall } from './src/packages-uninstall.ts';
+import { runPackagesUpgrade } from './src/packages-upgrade.ts';
+import { runPackagesInit } from './src/packages-init.ts';
+import { runConnectionsList } from './src/connections-list.ts';
+import { runConnectionsGet } from './src/connections-get.ts';
+import { runConnectionsPull } from './src/connections-pull.ts';
+import { runConnectionsPush } from './src/connections-push.ts';
+import { runConnectionsDelete } from './src/connections-delete.ts';
+import { runConnectionsCreate } from './src/connections-create.ts';
+import { runConnectionsUpdate } from './src/connections-update.ts';
+import { runConnectionsTypesList, runConnectionsTypesSchema } from './src/connections-types.ts';
+import { runEnvironmentsList } from './src/environments-list.ts';
+import { runEnvironmentsGet } from './src/environments-get.ts';
+import { runEnvironmentsPull } from './src/environments-pull.ts';
+import { runEnvironmentsPush } from './src/environments-push.ts';
+import {
+  runEnvironmentsVars,
+  runEnvironmentsVarSet,
+  runEnvironmentsVarUnset,
+} from './src/environments-vars.ts';
+import { runEnvironmentsDelete } from './src/environments-delete.ts';
+import { runEnvironmentsCreate } from './src/environments-create.ts';
+import { runEnvironmentsUpdate } from './src/environments-update.ts';
+import { runTriggersList } from './src/triggers-list.ts';
+import { runTriggersGet } from './src/triggers-get.ts';
+import { runTriggersCreate } from './src/triggers-create.ts';
+import { runTriggersUpdate } from './src/triggers-update.ts';
+import { runTriggersDelete } from './src/triggers-delete.ts';
+import {
+  runTriggersDisable,
+  runTriggersDuplicate,
+  runTriggersEnable,
+  runTriggersRotateSecret,
+} from './src/triggers-lifecycle.ts';
+import {
+  runDataStoresTablesCreate,
+  runDataStoresTablesDelete,
+  runDataStoresTablesList,
+} from './src/data-stores-tables.ts';
+import {
+  runDataStoresRecordsDelete,
+  runDataStoresRecordsGet,
+  runDataStoresRecordsList,
+  runDataStoresRecordsSet,
+} from './src/data-stores-records.ts';
+import { runDataStoresImport } from './src/data-stores-import.ts';
+import { runDataStoresExport } from './src/data-stores-export.ts';
 
 const byType = new EnumType(['id', 'suid', 'name']);
 
@@ -604,20 +652,953 @@ const packagesDownload = new Command()
     });
   });
 
+const packagesListVersions = new Command()
+  .description('List every published version of a package.')
+  .arguments('<ref:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--where <expr:string>', 'Filter expression <field>:<op>:<value>. Repeatable.', {
+    collect: true,
+  })
+  .option('--order <spec:string>', 'Sort order <field>[:ASC|DESC]', {
+    default: 'createdAt:DESC',
+  })
+  .option('--limit <n:number>', 'Max results (default 50)')
+  .option('--raw-query <qs:string>', 'Raw URLSearchParams passthrough')
+  .option('-j, --json', 'Emit JSON instead of a table', { default: false })
+  .option('--all', 'Paginate through every result', { default: false })
+  .example('List versions', 'quickflo packages list-versions @acme/onboarding -o myorg')
+  .action(async (opts, ref) => {
+    await runPackagesListVersions({
+      ref,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      where: opts.where,
+      order: opts.order,
+      limit: opts.limit,
+      rawQuery: opts.rawQuery,
+      json: opts.json,
+      all: opts.all,
+    });
+  });
+
+const packagesUninstall = new Command()
+  .description(
+    'Uninstall a package install. Deletes every resource the install created.',
+  )
+  .arguments('<install-id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--yes', 'Skip the confirmation prompt', { default: false })
+  .option('-j, --json', 'Emit the uninstall summary as JSON', { default: false })
+  .example('Uninstall', 'quickflo packages uninstall <install-id> -o myorg')
+  .action(async (opts, installId) => {
+    await runPackagesUninstall({
+      installId,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      yes: opts.yes,
+      json: opts.json,
+    });
+  });
+
+const packagesUpgrade = new Command()
+  .description(
+    'Preview a reinstall to a new version (and commit it with --apply). Two-step like terraform plan/apply.',
+  )
+  .arguments('<install-id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--to <version:string>', 'Target version (semver)', { required: true })
+  .option('--apply', 'Commit the upgrade (default: preview only)', { default: false })
+  .option(
+    '--decisions <file:file>',
+    'Override default decisions with a JSON file matching CommitDecisions shape',
+  )
+  .option('-j, --json', 'Emit the preview/commit result as JSON', { default: false })
+  .example('Preview', 'quickflo packages upgrade <install-id> --to 1.2.0 -o myorg')
+  .example('Commit', 'quickflo packages upgrade <install-id> --to 1.2.0 --apply -o myorg')
+  .action(async (opts, installId) => {
+    await runPackagesUpgrade({
+      installId,
+      to: opts.to,
+      apply: opts.apply,
+      decisionsFile: opts.decisions,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const packagesInit = new Command()
+  .description(
+    'Scaffold a pkg.json descriptor for packages publish. Interactive by default; pass every flag to skip prompts.',
+  )
+  .option('--out <path:string>', 'Where to write the descriptor', { default: 'pkg.json' })
+  .option('--name <text:string>', 'Package name (e.g. onboarding)')
+  .option('--version <semver:string>', 'Initial version (default 0.1.0)')
+  .option('--summary <text:string>', 'One-line summary')
+  .option('--visibility <kind:string>', 'public | unlisted | private (default private)')
+  .option('--roots <name:string>', 'Root workflow name (repeatable)', { collect: true })
+  .option('--from-org <suid:string>', 'Source org to resolve workflow names against')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--yes', 'Skip prompts (every required field must be passed as a flag)', {
+    default: false,
+  })
+  .example('Interactive', 'quickflo packages init')
+  .example(
+    'Non-interactive',
+    'quickflo packages init --name onboarding --roots "Welcome flow" --yes -o myorg',
+  )
+  .action(async (opts) => {
+    await runPackagesInit({
+      out: opts.out,
+      name: opts.name,
+      version: opts.version,
+      summary: opts.summary,
+      visibility: opts.visibility,
+      roots: opts.roots,
+      fromOrg: opts.fromOrg,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      yes: opts.yes,
+    });
+  });
+
 const packages = new Command()
   .description(
     'Package management commands (export/import composable solution bundles).',
   )
   .command('list', packagesList)
+  .command('list-versions', packagesListVersions)
   .command('install', packagesInstall)
+  .command('uninstall', packagesUninstall)
+  .command('upgrade', packagesUpgrade)
   .command('download', packagesDownload)
-  .command('publish', packagesPublish);
+  .command('publish', packagesPublish)
+  .command('init', packagesInit);
+
+// ─── Connections ─────────────────────────────────────────────────────────────
+
+const connectionsList = new Command()
+  .description("Print the org's connections as a table (or JSON).")
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option(
+    '-n, --name <substr:string>',
+    'Substring match on name (shorthand for --where name:re:<substr>)',
+  )
+  .option('--where <expr:string>', 'Filter expression <field>:<op>:<value>. Repeatable.', {
+    collect: true,
+  })
+  .option('--order <spec:string>', 'Sort order <field>[:ASC|DESC]', {
+    default: 'updatedAt:DESC',
+  })
+  .option('--limit <n:number>', 'Max results (default 50)')
+  .option('--raw-query <qs:string>', 'Raw URLSearchParams passthrough')
+  .option('-j, --json', 'Emit JSON instead of a table', { default: false })
+  .option('--all', 'Paginate through every result', { default: false })
+  .action(async (opts) => {
+    await runConnectionsList({
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      name: opts.name,
+      where: opts.where,
+      order: opts.order,
+      limit: opts.limit,
+      rawQuery: opts.rawQuery,
+      json: opts.json,
+      all: opts.all,
+    });
+  });
+
+const connectionsGet = new Command()
+  .description('Print one connection as pushable JSON (auto-detects UUID / name).')
+  .type('by', byType)
+  .arguments('<ref:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force lookup mode (id | suid | name). Default: auto-detect.')
+  .option('--mask', 'Replace config values with "***" placeholders', { default: false })
+  .option('-j, --json', 'Emit the raw API record instead of pushable shape', { default: false })
+  .action(async (opts, ref) => {
+    await runConnectionsGet({
+      ref,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      mask: opts.mask,
+      json: opts.json,
+    });
+  });
+
+const connectionsPull = new Command()
+  .description('Download connections to a local directory as pushable JSON files.')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-d, --dir <path:file>', 'Destination directory', { default: './connections' })
+  .option('-n, --name <substr:string>', 'Substring match on name')
+  .option('--where <expr:string>', 'Filter expression <field>:<op>:<value>. Repeatable.', {
+    collect: true,
+  })
+  .option('--order <spec:string>', 'Sort order <field>[:ASC|DESC]')
+  .option('--limit <n:number>', 'Max results')
+  .option('--raw-query <qs:string>', 'Raw URLSearchParams passthrough')
+  .option('--force', 'Overwrite local files that differ from remote', { default: false })
+  .option('--dry-run', 'Print the plan without writing any files', { default: false })
+  .option('--mask', 'Write "***" placeholders instead of plaintext secrets', { default: false })
+  .action(async (opts) => {
+    await runConnectionsPull({
+      dir: opts.dir,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      name: opts.name,
+      where: opts.where,
+      order: opts.order,
+      limit: opts.limit,
+      rawQuery: opts.rawQuery,
+      force: opts.force,
+      dryRun: opts.dryRun,
+      mask: opts.mask,
+    });
+  });
+
+const connectionsPush = new Command()
+  .description('Bulk upsert connection JSON files from a directory.')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-d, --dir <path:file>', 'Source directory', { default: './connections' })
+  .option('--dry-run', 'Print the plan without making any changes', { default: false })
+  .action(async (opts) => {
+    await runConnectionsPush({
+      dir: opts.dir,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      dryRun: opts.dryRun,
+    });
+  });
+
+const connectionsCreate = new Command()
+  .description(
+    'Create a connection. For OAuth-typed providers, opens the browser for consent and polls until the connection materializes.',
+  )
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--type <text:string>', 'Connection type (run `connections types` to list)', {
+    required: true,
+  })
+  .option('--name <text:string>', 'Connection name (unique per org)', { required: true })
+  .option('--config <json:string>', 'Inline JSON config (API-key types only)')
+  .option('--from-file <path:file>', 'Read config JSON from a file (API-key types only)')
+  .example(
+    'API-key',
+    'quickflo connections create --type stripe --name billing --config \'{"apiKey":"sk_…"}\' -o myorg',
+  )
+  .example(
+    'OAuth (browser handoff)',
+    'quickflo connections create --type slack --name prod-alerts -o myorg',
+  )
+  .action(async (opts) => {
+    await runConnectionsCreate({
+      type: opts.type,
+      name: opts.name,
+      config: opts.config,
+      fromFile: opts.fromFile,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const connectionsUpdate = new Command()
+  .description('Update a connection (rename or swap config for API-key types).')
+  .type('by', byType)
+  .arguments('<ref:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force lookup mode (id | name)')
+  .option('--name <text:string>', 'Rename')
+  .option('--config <json:string>', 'New inline JSON config (API-key types only)')
+  .option('--from-file <path:file>', 'Read new config JSON from a file')
+  .action(async (opts, ref) => {
+    await runConnectionsUpdate({
+      ref,
+      by: opts.by,
+      name: opts.name,
+      config: opts.config,
+      fromFile: opts.fromFile,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const connectionsDelete = new Command()
+  .description('Delete a connection by UUID or name.')
+  .type('by', byType)
+  .arguments('<ref:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force lookup mode (id | name)')
+  .option('--yes', 'Skip the confirmation prompt', { default: false })
+  .action(async (opts, ref) => {
+    await runConnectionsDelete({
+      ref,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      yes: opts.yes,
+    });
+  });
+
+const connectionsTypesList = new Command()
+  .description('List registered connection types.')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts) => {
+    await runConnectionsTypesList({
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const connectionsTypesSchema = new Command()
+  .description('Print the JSON Schema for a connection type.')
+  .arguments('<type:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .action(async (opts, type) => {
+    await runConnectionsTypesSchema({
+      type,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const connectionsTypes = new Command()
+  .description('Inspect registered connection types.')
+  .command('list', connectionsTypesList)
+  .command('schema', connectionsTypesSchema);
+
+const connections = new Command()
+  .description('Manage saved credentials for external services.')
+  .command('list', connectionsList)
+  .command('get', connectionsGet)
+  .command('create', connectionsCreate)
+  .command('update', connectionsUpdate)
+  .command('pull', connectionsPull)
+  .command('push', connectionsPush)
+  .command('delete', connectionsDelete)
+  .command('types', connectionsTypes);
+
+// ─── Environments ────────────────────────────────────────────────────────────
+
+const environmentsList = new Command()
+  .description("Print the org's environments as a table (or JSON).")
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-n, --name <substr:string>', 'Substring match on name')
+  .option('--where <expr:string>', 'Filter expression <field>:<op>:<value>. Repeatable.', {
+    collect: true,
+  })
+  .option('--order <spec:string>', 'Sort order <field>[:ASC|DESC]', {
+    default: 'updatedAt:DESC',
+  })
+  .option('--limit <n:number>', 'Max results (default 50)')
+  .option('--raw-query <qs:string>', 'Raw URLSearchParams passthrough')
+  .option('-j, --json', 'Emit JSON instead of a table', { default: false })
+  .option('--all', 'Paginate through every result', { default: false })
+  .action(async (opts) => {
+    await runEnvironmentsList({
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      name: opts.name,
+      where: opts.where,
+      order: opts.order,
+      limit: opts.limit,
+      rawQuery: opts.rawQuery,
+      json: opts.json,
+      all: opts.all,
+    });
+  });
+
+const environmentsGet = new Command()
+  .description('Print one environment as pushable JSON.')
+  .type('by', byType)
+  .arguments('<ref:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force lookup mode (id | name)')
+  .option('--mask', 'Replace values with "***"', { default: false })
+  .option('-j, --json', 'Emit the raw API record', { default: false })
+  .action(async (opts, ref) => {
+    await runEnvironmentsGet({
+      ref,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      mask: opts.mask,
+      json: opts.json,
+    });
+  });
+
+const environmentsPull = new Command()
+  .description('Download environments to a local directory.')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-d, --dir <path:file>', 'Destination directory', { default: './environments' })
+  .option('-n, --name <substr:string>', 'Substring match on name')
+  .option('--where <expr:string>', 'Filter expression <field>:<op>:<value>. Repeatable.', {
+    collect: true,
+  })
+  .option('--order <spec:string>', 'Sort order <field>[:ASC|DESC]')
+  .option('--limit <n:number>', 'Max results')
+  .option('--raw-query <qs:string>', 'Raw URLSearchParams passthrough')
+  .option('--force', 'Overwrite local files that differ from remote', { default: false })
+  .option('--dry-run', 'Print the plan without writing any files', { default: false })
+  .option('--mask', 'Write "***" placeholders instead of plaintext values', { default: false })
+  .action(async (opts) => {
+    await runEnvironmentsPull({
+      dir: opts.dir,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      name: opts.name,
+      where: opts.where,
+      order: opts.order,
+      limit: opts.limit,
+      rawQuery: opts.rawQuery,
+      force: opts.force,
+      dryRun: opts.dryRun,
+      mask: opts.mask,
+    });
+  });
+
+const environmentsPush = new Command()
+  .description('Bulk upsert environments + variables from a directory.')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-d, --dir <path:file>', 'Source directory', { default: './environments' })
+  .option('--dry-run', 'Print the plan without making any changes', { default: false })
+  .option('--prune', 'Delete remote vars not present in the file (bulk-delete)', {
+    default: false,
+  })
+  .action(async (opts) => {
+    await runEnvironmentsPush({
+      dir: opts.dir,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      dryRun: opts.dryRun,
+      prune: opts.prune,
+    });
+  });
+
+const environmentsCreate = new Command()
+  .description('Create an environment, optionally seeded with --var KEY=VALUE pairs.')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--name <text:string>', 'Environment name (unique per org)', { required: true })
+  .option('--var <expr:string>', 'KEY=VALUE pair (repeatable)', { collect: true })
+  .example('Empty env', 'quickflo environments create --name staging -o myorg')
+  .example(
+    'Seeded',
+    'quickflo environments create --name prod --var DATABASE_URL=postgres://… --var REDIS_URL=redis://… -o myorg',
+  )
+  .action(async (opts) => {
+    await runEnvironmentsCreate({
+      name: opts.name,
+      vars: opts.var,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const environmentsUpdate = new Command()
+  .description('Rename an environment. (Variable edits go through set/unset/push.)')
+  .type('by', byType)
+  .arguments('<ref:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force lookup mode (id | name)')
+  .option('--name <text:string>', 'New name', { required: true })
+  .action(async (opts, ref) => {
+    await runEnvironmentsUpdate({
+      ref,
+      by: opts.by,
+      name: opts.name,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const environmentsSet = new Command()
+  .description('Set a single variable on an environment.')
+  .type('by', byType)
+  .arguments('<env:string> <key:string> <value:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force env lookup mode (id | name)')
+  .action(async (opts, env, key, value) => {
+    await runEnvironmentsVarSet({
+      ref: env,
+      key,
+      value,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const environmentsUnset = new Command()
+  .description('Delete a single variable from an environment.')
+  .type('by', byType)
+  .arguments('<env:string> <key:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force env lookup mode (id | name)')
+  .action(async (opts, env, key) => {
+    await runEnvironmentsVarUnset({
+      ref: env,
+      key,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const environmentsVars = new Command()
+  .description("Print one environment's variables.")
+  .type('by', byType)
+  .arguments('<env:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force env lookup mode (id | name)')
+  .option('--mask', 'Show keys only (no values fetched server-side)', { default: false })
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts, env) => {
+    await runEnvironmentsVars({
+      ref: env,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      mask: opts.mask,
+      json: opts.json,
+    });
+  });
+
+const environmentsDelete = new Command()
+  .description('Delete an environment.')
+  .type('by', byType)
+  .arguments('<ref:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force lookup mode (id | name)')
+  .option('--yes', 'Skip the confirmation prompt', { default: false })
+  .action(async (opts, ref) => {
+    await runEnvironmentsDelete({
+      ref,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      yes: opts.yes,
+    });
+  });
+
+const environments = new Command()
+  .description('Manage environment variable sets.')
+  .command('list', environmentsList)
+  .command('get', environmentsGet)
+  .command('create', environmentsCreate)
+  .command('update', environmentsUpdate)
+  .command('pull', environmentsPull)
+  .command('push', environmentsPush)
+  .command('set', environmentsSet)
+  .command('unset', environmentsUnset)
+  .command('vars', environmentsVars)
+  .command('delete', environmentsDelete);
+
+// ─── Triggers ────────────────────────────────────────────────────────────────
+
+const triggerTypeType = new EnumType(['webhook', 'schedule', 'event', 'form']);
+
+const triggersList = new Command()
+  .description('List triggers for a workflow.')
+  .type('by', byType)
+  .arguments('<workflow:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force workflow lookup mode')
+  .option('--where <expr:string>', 'Filter expression <field>:<op>:<value>. Repeatable.', {
+    collect: true,
+  })
+  .option('--order <spec:string>', 'Sort order <field>[:ASC|DESC]', {
+    default: 'updatedAt:DESC',
+  })
+  .option('--limit <n:number>', 'Max results')
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts, workflow) => {
+    await runTriggersList({
+      workflow,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      where: opts.where,
+      order: opts.order,
+      limit: opts.limit,
+      json: opts.json,
+    });
+  });
+
+const triggersGet = new Command()
+  .description('Get one trigger (includes computed URLs).')
+  .type('by', byType)
+  .arguments('<workflow:string> <id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force workflow lookup mode')
+  .action(async (opts, workflow, id) => {
+    await runTriggersGet({
+      workflow,
+      id,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const triggersCreate = new Command()
+  .description('Create a trigger for a workflow.')
+  .type('by', byType)
+  .type('triggerType', triggerTypeType)
+  .arguments('<workflow:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force workflow lookup mode')
+  .option('--type <kind:triggerType>', 'Trigger type (required unless --from-file)')
+  .option('--name <text:string>', 'Trigger name')
+  .option('--from-file <path:file>', 'JSON body for the trigger config')
+  .action(async (opts, workflow) => {
+    await runTriggersCreate({
+      workflow,
+      type: opts.type,
+      name: opts.name,
+      fromFile: opts.fromFile,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const triggersUpdate = new Command()
+  .description('Update a trigger (name, enabled, config).')
+  .type('by', byType)
+  .arguments('<workflow:string> <id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force workflow lookup mode')
+  .option('--name <text:string>', 'New name')
+  .option('--enabled <bool:string>', 'true | false')
+  .option('--from-file <path:file>', 'JSON body to merge (typically the `config` block)')
+  .action(async (opts, workflow, id) => {
+    await runTriggersUpdate({
+      workflow,
+      id,
+      name: opts.name,
+      enabled: opts.enabled,
+      fromFile: opts.fromFile,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const triggersDelete = new Command()
+  .description('Delete a trigger.')
+  .type('by', byType)
+  .arguments('<workflow:string> <id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force workflow lookup mode')
+  .option('--yes', 'Skip the confirmation prompt', { default: false })
+  .action(async (opts, workflow, id) => {
+    await runTriggersDelete({
+      workflow,
+      id,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      yes: opts.yes,
+    });
+  });
+
+const triggersEnable = new Command()
+  .description('Enable a trigger (resumes schedule triggers).')
+  .type('by', byType)
+  .arguments('<workflow:string> <id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force workflow lookup mode')
+  .action(async (opts, workflow, id) => {
+    await runTriggersEnable({
+      workflow,
+      id,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const triggersDisable = new Command()
+  .description('Disable a trigger (pauses schedule triggers).')
+  .type('by', byType)
+  .arguments('<workflow:string> <id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force workflow lookup mode')
+  .action(async (opts, workflow, id) => {
+    await runTriggersDisable({
+      workflow,
+      id,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const triggersRotateSecret = new Command()
+  .description("Rotate a webhook trigger's secret. The new secret is printed once.")
+  .type('by', byType)
+  .arguments('<workflow:string> <id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force workflow lookup mode')
+  .action(async (opts, workflow, id) => {
+    await runTriggersRotateSecret({
+      workflow,
+      id,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const triggersDuplicate = new Command()
+  .description('Duplicate a trigger to another workflow.')
+  .type('by', byType)
+  .arguments('<workflow:string> <id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force workflow lookup mode')
+  .option('--to <workflow:string>', 'Target workflow ref', { required: true })
+  .option('--name <text:string>', 'Name for the duplicated trigger')
+  .action(async (opts, workflow, id) => {
+    await runTriggersDuplicate({
+      workflow,
+      id,
+      to: opts.to,
+      name: opts.name,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const triggers = new Command()
+  .description('Manage workflow triggers (webhooks, schedules, forms, events).')
+  .command('list', triggersList)
+  .command('get', triggersGet)
+  .command('create', triggersCreate)
+  .command('update', triggersUpdate)
+  .command('delete', triggersDelete)
+  .command('enable', triggersEnable)
+  .command('disable', triggersDisable)
+  .command('rotate-secret', triggersRotateSecret)
+  .command('duplicate', triggersDuplicate);
+
+// ─── Data stores ─────────────────────────────────────────────────────────────
+
+const dsTablesList = new Command()
+  .description('List data store tables and their key counts.')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .option('--all', 'Paginate through every table', { default: false })
+  .option('--limit <n:number>', 'Max results')
+  .action(async (opts) => {
+    await runDataStoresTablesList({
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+      all: opts.all,
+      limit: opts.limit,
+    });
+  });
+
+const dsTablesCreate = new Command()
+  .description('Create a new data store table.')
+  .arguments('<table:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .action(async (opts, table) => {
+    await runDataStoresTablesCreate({
+      tableName: table,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const dsTablesDelete = new Command()
+  .description('Delete an entire data store table (all entries).')
+  .arguments('<table:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--yes', 'Skip the confirmation prompt', { default: false })
+  .action(async (opts, table) => {
+    await runDataStoresTablesDelete({
+      tableName: table,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      yes: opts.yes,
+    });
+  });
+
+const dsTables = new Command()
+  .description('Manage data store tables.')
+  .command('list', dsTablesList)
+  .command('create', dsTablesCreate)
+  .command('delete', dsTablesDelete);
+
+const dsRecordsList = new Command()
+  .description('List entries in a data store table.')
+  .arguments('<table:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--prefix <s:string>', 'Filter by key prefix')
+  .option('--filter <expr:string>', 'JSONB filter: field:value or field:=value. Repeatable.', {
+    collect: true,
+  })
+  .option('--sort <field:string>', 'Sort field: key | createdAt | updatedAt')
+  .option('--desc', 'Sort descending', { default: false })
+  .option('--limit <n:number>', 'Max results')
+  .option('--all', 'Paginate through every entry', { default: false })
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts, table) => {
+    await runDataStoresRecordsList({
+      tableName: table,
+      prefix: opts.prefix,
+      filter: opts.filter,
+      sort: opts.sort,
+      desc: opts.desc,
+      limit: opts.limit,
+      all: opts.all,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const dsRecordsGet = new Command()
+  .description("Get one entry's value (or the full record with --meta).")
+  .arguments('<table:string> <key:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--meta', 'Emit the full record (timestamps, expiry, ids)', { default: false })
+  .action(async (opts, table, key) => {
+    await runDataStoresRecordsGet({
+      tableName: table,
+      key,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      meta: opts.meta,
+    });
+  });
+
+const dsRecordsSet = new Command()
+  .description('Upsert one entry (PATCH-then-POST-on-404).')
+  .arguments('<table:string> <key:string> [value:string]')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--from-stdin', 'Read the value (JSON or raw text) from stdin', { default: false })
+  .option('--from-file <path:file>', 'Read the value from a file')
+  .option('--ttl <seconds:number>', 'Expire the entry after N seconds')
+  .action(async (opts, table, key, value) => {
+    await runDataStoresRecordsSet({
+      tableName: table,
+      key,
+      value,
+      fromStdin: opts.fromStdin,
+      fromFile: opts.fromFile,
+      ttl: opts.ttl,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const dsRecordsDelete = new Command()
+  .description('Delete one entry.')
+  .arguments('<table:string> <key:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--yes', 'Skip the confirmation prompt', { default: false })
+  .action(async (opts, table, key) => {
+    await runDataStoresRecordsDelete({
+      tableName: table,
+      key,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      yes: opts.yes,
+    });
+  });
+
+const dsImport = new Command()
+  .description('Bulk-upsert entries into a table from a JSON file (or stdin).')
+  .arguments('<table:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-f, --file <path:file>', 'Source JSON (array of {key,value} or {key:value} object)')
+  .action(async (opts, table) => {
+    await runDataStoresImport({
+      tableName: table,
+      file: opts.file,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const dsExport = new Command()
+  .description('Export all entries from a table as a JSON array.')
+  .arguments('<table:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--out <path:string>', 'Write to a file (default: stdout)')
+  .action(async (opts, table) => {
+    await runDataStoresExport({
+      tableName: table,
+      output: opts.out,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const dataStores = new Command()
+  .description('Manage data store tables and records.')
+  .command('tables', dsTables)
+  .command('list', dsRecordsList)
+  .command('get', dsRecordsGet)
+  .command('set', dsRecordsSet)
+  .command('delete', dsRecordsDelete)
+  .command('import', dsImport)
+  .command('export', dsExport);
 
 await new Command()
   .name('quickflo')
-  .version('0.3.0')
+  .version('1.3.0')
   .description('QuickFlo command-line interface.')
   .command('auth', auth)
   .command('workflows', workflows)
   .command('packages', packages)
+  .command('connections', connections)
+  .command('environments', environments)
+  .command('triggers', triggers)
+  .command('data-stores', dataStores)
   .parse(Deno.args);

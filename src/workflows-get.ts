@@ -5,6 +5,7 @@
 
 import { colors } from '@cliffy/ansi/colors';
 import { type ApiClient, apiFetch } from './api.ts';
+import { detectLookup, type Lookup } from './refs.ts';
 import { openSession } from './session.ts';
 
 interface WorkflowRecord {
@@ -21,16 +22,6 @@ interface WorkflowRecord {
 
 interface WorkflowListResponse {
   data: WorkflowRecord[];
-}
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-type Lookup = 'id' | 'suid' | 'name';
-
-function detectLookup(ref: string): Lookup {
-  if (UUID_RE.test(ref)) return 'id';
-  if (/^[a-z0-9]{3,8}$/i.test(ref)) return 'suid';
-  return 'name';
 }
 
 async function fetchOne(
