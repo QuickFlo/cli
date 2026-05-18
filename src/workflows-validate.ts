@@ -92,7 +92,7 @@ function walkSteps(
   });
 }
 
-function localValidate(def: DefinitionLike): ValidationReport {
+export function localValidate(def: DefinitionLike): ValidationReport {
   const errors: ValidationIssue[] = [];
   const warnings: ValidationIssue[] = [];
 

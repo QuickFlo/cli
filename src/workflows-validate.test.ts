@@ -3,63 +3,45 @@
  * three semantic rules the CLI re-implements until @quickflo/schemas is
  * published. The strict (network) path is exercised manually against a real
  * org.
+ *
+ * Tests call `localValidate` directly to avoid disk I/O — the file/stdin
+ * source path is exercised end-to-end manually.
  */
 
 import { assert, assertEquals } from '@std/assert';
-import { runWorkflowsValidate } from './workflows-validate.ts';
-import { ValidationError } from './errors.ts';
+import { localValidate } from './workflows-validate.ts';
 
-async function capture(json: Record<string, unknown>): Promise<{ ok: boolean; stdout: string }> {
-  const tmp = await Deno.makeTempFile({ suffix: '.json' });
-  await Deno.writeTextFile(tmp, JSON.stringify(json));
-  const originalLog = console.log;
-  const originalErr = console.error;
-  let stdout = '';
-  console.log = (...args: unknown[]) => {
-    stdout += args.join(' ') + '\n';
-  };
-  console.error = () => {};
-  try {
-    await runWorkflowsValidate({ source: tmp, json: true });
-    return { ok: true, stdout };
-  } catch (err) {
-    if (err instanceof ValidationError) return { ok: false, stdout };
-    throw err;
-  } finally {
-    console.log = originalLog;
-    console.error = originalErr;
-    await Deno.remove(tmp).catch(() => {});
-  }
-}
-
-Deno.test('validate: minimal valid workflow passes', async () => {
-  const res = await capture({ name: 'wf', steps: [{ id: 'a', stepType: 'http' }] });
-  assert(res.ok, `expected ok, got: ${res.stdout}`);
+Deno.test('validate: minimal valid workflow passes', () => {
+  const r = localValidate({ name: 'wf', steps: [{ id: 'a', stepType: 'http' }] });
+  assert(r.ok, `expected ok, got errors: ${JSON.stringify(r.errors)}`);
 });
 
-Deno.test('validate: missing name fails', async () => {
-  const res = await capture({ steps: [] });
-  assertEquals(res.ok, false);
+Deno.test('validate: missing name fails', () => {
+  const r = localValidate({ steps: [] });
+  assertEquals(r.ok, false);
+  assert(r.errors.some((e) => e.path === '$.name'));
 });
 
-Deno.test('validate: missing steps array fails', async () => {
-  const res = await capture({ name: 'wf' });
-  assertEquals(res.ok, false);
+Deno.test('validate: missing steps array fails', () => {
+  const r = localValidate({ name: 'wf' });
+  assertEquals(r.ok, false);
+  assert(r.errors.some((e) => e.path === '$.steps'));
 });
 
-Deno.test('validate: duplicate step ids fail', async () => {
-  const res = await capture({
+Deno.test('validate: duplicate step ids fail', () => {
+  const r = localValidate({
     name: 'wf',
     steps: [
       { id: 'a', stepType: 'http' },
       { id: 'a', stepType: 'http' },
     ],
   });
-  assertEquals(res.ok, false);
+  assertEquals(r.ok, false);
+  assert(r.errors.some((e) => e.code === 'duplicate_id'));
 });
 
-Deno.test('validate: codeStep inside concurrent forEach fails', async () => {
-  const res = await capture({
+Deno.test('validate: codeStep inside concurrent forEach fails', () => {
+  const r = localValidate({
     name: 'wf',
     steps: [
       {
@@ -72,11 +54,12 @@ Deno.test('validate: codeStep inside concurrent forEach fails', async () => {
       },
     ],
   });
-  assertEquals(res.ok, false);
+  assertEquals(r.ok, false);
+  assert(r.errors.some((e) => e.code === 'CodeStepInConcurrentForEach'));
 });
 
-Deno.test('validate: codeStep inside sequential forEach passes', async () => {
-  const res = await capture({
+Deno.test('validate: codeStep inside sequential forEach passes', () => {
+  const r = localValidate({
     name: 'wf',
     steps: [
       {
@@ -89,11 +72,11 @@ Deno.test('validate: codeStep inside sequential forEach passes', async () => {
       },
     ],
   });
-  assert(res.ok);
+  assert(r.ok, `expected ok, got errors: ${JSON.stringify(r.errors)}`);
 });
 
-Deno.test('validate: filter referencing unknown stepId fails', async () => {
-  const res = await capture({
+Deno.test('validate: filter referencing unknown stepId fails', () => {
+  const r = localValidate({
     name: 'wf',
     steps: [
       {
@@ -103,11 +86,12 @@ Deno.test('validate: filter referencing unknown stepId fails', async () => {
       },
     ],
   });
-  assertEquals(res.ok, false);
+  assertEquals(r.ok, false);
+  assert(r.errors.some((e) => e.code === 'UnknownFilterRule'));
 });
 
-Deno.test('validate: filter referencing known stepId passes', async () => {
-  const res = await capture({
+Deno.test('validate: filter referencing known stepId passes', () => {
+  const r = localValidate({
     name: 'wf',
     steps: [
       { id: 'a', stepType: 'http' },
@@ -118,5 +102,14 @@ Deno.test('validate: filter referencing known stepId passes', async () => {
       },
     ],
   });
-  assert(res.ok);
+  assert(r.ok, `expected ok, got errors: ${JSON.stringify(r.errors)}`);
+});
+
+Deno.test('validate: codeStep emits tier warning (not error)', () => {
+  const r = localValidate({
+    name: 'wf',
+    steps: [{ id: 'a', stepType: 'codeStep' }],
+  });
+  assert(r.ok);
+  assert(r.warnings.some((w) => w.code === 'CodeStepRequiresMediumTier'));
 });
