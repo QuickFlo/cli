@@ -4,6 +4,8 @@
  * one place.
  */
 
+import { ApiError } from './errors.ts';
+
 export interface ApiClient {
   apiUrl: string;
   accessToken: string;
@@ -24,7 +26,22 @@ export async function apiFetch<T>(
   const res = await fetch(`${client.apiUrl}${path}`, { ...init, headers });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`API ${res.status} ${path}: ${text || res.statusText}`);
+    let parsed: unknown;
+    try {
+      parsed = text ? JSON.parse(text) : undefined;
+    } catch {
+      parsed = undefined;
+    }
+    const body = parsed as
+      | { message?: string | string[]; code?: string; error?: string }
+      | undefined;
+    const message = Array.isArray(body?.message)
+      ? body!.message.join('; ')
+      : (body?.message ?? body?.error ?? text ?? res.statusText);
+    throw new ApiError(res.status, path, `API ${res.status} ${path}: ${message}`, {
+      code: body?.code,
+      details: parsed ?? text,
+    });
   }
   const text = await res.text();
   return text ? (JSON.parse(text) as T) : (undefined as T);

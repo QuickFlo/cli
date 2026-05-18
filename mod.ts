@@ -72,8 +72,21 @@ import {
 } from './src/data-stores-records.ts';
 import { runDataStoresImport } from './src/data-stores-import.ts';
 import { runDataStoresExport } from './src/data-stores-export.ts';
+import { setQuiet } from './src/log.ts';
+import { printError } from './src/errors.ts';
+import { runWorkflowsRun } from './src/workflows-run.ts';
+import { runWorkflowsExecutionsList } from './src/workflows-executions-list.ts';
+import { runWorkflowsExecutionsGet } from './src/workflows-executions-get.ts';
+import { runWorkflowsExecutionsLogs } from './src/workflows-executions-logs.ts';
+import { runWorkflowsExecutionsDownload } from './src/workflows-executions-download.ts';
+import { runWorkflowsExecutionsReplay } from './src/workflows-executions-replay.ts';
+import { runWorkflowsExecutionsTail } from './src/workflows-executions-tail.ts';
+import { runWorkflowsValidate } from './src/workflows-validate.ts';
+import { runWorkflowsStepsGet, runWorkflowsStepsList } from './src/workflows-steps.ts';
+import { runConnectionsTest } from './src/connections-test.ts';
 
 const byType = new EnumType(['id', 'suid', 'name']);
+const runModeType = new EnumType(['sync', 'async']);
 
 const authLogin = new Command()
   .description(
@@ -395,12 +408,317 @@ const workflowsGet = new Command()
     });
   });
 
+const workflowsRun = new Command()
+  .description('Trigger a manual workflow run against /workflows/execute.')
+  .type('by', byType)
+  .type('runMode', runModeType)
+  .arguments('<ref:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--by <kind:by>', 'Force lookup mode (id | suid | name). Default: auto-detect.')
+  .option('--input <json:string>', 'Initial input JSON (object).')
+  .option('--input-file <path:string>', 'Read initial input JSON from a file.')
+  .option('--input-stdin', 'Read initial input JSON from stdin.', { default: false })
+  .option('--env <name:string>', 'Override the workflow environment used for variable resolution.')
+  .option(
+    '--mode <m:runMode>',
+    'Execution mode: sync (wait) or async (queue + return executionId).',
+    {
+      default: 'sync' as const,
+    },
+  )
+  .option('--show <ids:string>', 'Comma-separated step IDs to include in the per-step output.', {
+    collect: true,
+  })
+  .option('--hide <ids:string>', 'Comma-separated step IDs to exclude from the per-step output.', {
+    collect: true,
+  })
+  .option('--timeout <seconds:number>', 'Client-side timeout (sync mode only).')
+  .option(
+    '--save-trace <path:string>',
+    'After a sync run completes, save the full trace JSON to this path.',
+  )
+  .option(
+    '--save-steps-to <dir:string>',
+    'After a sync run completes, write one JSON file per step output into this directory.',
+  )
+  .option('--show-secrets', 'Include secret values in saved trace / step output.', {
+    default: false,
+  })
+  .option('-j, --json', 'Emit the raw API response instead of the human table.', { default: false })
+  .example(
+    'Run a workflow with input',
+    `quickflo workflows run my-wf --input '{"x":1}' -o abcd`,
+  )
+  .example(
+    'Run async (queue + executionId)',
+    `quickflo workflows run my-wf --input '{}' --mode async -o abcd`,
+  )
+  .example(
+    'Run + persist trace and per-step outputs',
+    `quickflo workflows run my-wf --input '{}' --save-trace ./trace.json --save-steps-to ./steps/`,
+  )
+  .action(async (opts, ref) => {
+    await runWorkflowsRun({
+      ref,
+      by: opts.by,
+      input: opts.input,
+      inputFile: opts.inputFile,
+      inputStdin: opts.inputStdin,
+      env: opts.env,
+      mode: opts.mode,
+      show: opts.show?.flatMap((s: string) => s.split(',')),
+      hide: opts.hide?.flatMap((s: string) => s.split(',')),
+      timeout: opts.timeout,
+      saveTrace: opts.saveTrace,
+      saveStepsTo: opts.saveStepsTo,
+      showSecrets: opts.showSecrets,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const workflowsExecutionsList = new Command()
+  .description('List executions. Default order startedAt:DESC, limit 25.')
+  .type('by', byType)
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--workflow <ref:string>', 'Filter to one workflow (UUID, SUID, or name).')
+  .option('--by <kind:by>', 'Force lookup mode for --workflow.')
+  .option('--status <s:string>', 'Filter by status (running | success | failed | cancelled).')
+  .option(
+    '--since <duration:string>',
+    'Only executions started within the last <duration> (e.g. 30m, 2h, 1d).',
+  )
+  .option('--where <expr:string>', 'Repeatable <field>:<op>:<value> filter.', { collect: true })
+  .option('--order <field:string>', 'Sort key (e.g. startedAt:DESC).')
+  .option('--limit <n:number>', 'Page size (default 25).')
+  .option('--all', 'Paginate through every page until empty.', { default: false })
+  .option('-j, --json', 'Emit JSON instead of a table.', { default: false })
+  .action(async (opts) => {
+    await runWorkflowsExecutionsList({
+      workflow: opts.workflow,
+      by: opts.by,
+      status: opts.status,
+      since: opts.since,
+      where: opts.where,
+      order: opts.order,
+      limit: opts.limit,
+      all: opts.all,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const workflowsExecutionsGet = new Command()
+  .description('Show one execution with step paths.')
+  .arguments('<id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-j, --json', 'Emit JSON instead of a human view.', { default: false })
+  .action(async (opts, id) => {
+    await runWorkflowsExecutionsGet({
+      id,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const workflowsExecutionsLogs = new Command()
+  .description('Fetch a single step output (or the full trace with --full).')
+  .arguments('<id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--step <stepId:string>', 'Step ID to fetch output for.')
+  .option('--step-path <jsonPath:string>', 'Optional path inside the step output.')
+  .option('--full', 'Fetch the full trace data instead of one step.', { default: false })
+  .option('--show-secrets', 'Include secret values in the output.', { default: false })
+  .action(async (opts, id) => {
+    await runWorkflowsExecutionsLogs({
+      id,
+      step: opts.step,
+      stepPath: opts.stepPath,
+      full: opts.full,
+      showSecrets: opts.showSecrets,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const workflowsExecutionsDownload = new Command()
+  .description('Save the full trace JSON to a file.')
+  .arguments('<id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--out <path:string>', 'Output path (default: trace-<id>-<YYYYMMDD-HHmm>.json).')
+  .option('--show-secrets', 'Include secret values in the output.', { default: false })
+  .action(async (opts, id) => {
+    await runWorkflowsExecutionsDownload({
+      id,
+      out: opts.out,
+      showSecrets: opts.showSecrets,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const workflowsExecutionsReplay = new Command()
+  .description('Re-run a workflow with the same initial input as the original execution.')
+  .type('runMode', runModeType)
+  .arguments('<id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--mode <m:runMode>', 'Execution mode.', { default: 'sync' as const })
+  .option('--env <name:string>', 'Override the workflow environment used for variable resolution.')
+  .option('--timeout <seconds:number>', 'Client-side timeout (sync mode only).')
+  .option('--show <ids:string>', 'Comma-separated step IDs to include in the per-step output.', {
+    collect: true,
+  })
+  .option('--hide <ids:string>', 'Comma-separated step IDs to exclude from the per-step output.', {
+    collect: true,
+  })
+  .option('-j, --json', 'Emit JSON instead of a human view.', { default: false })
+  .action(async (opts, id) => {
+    await runWorkflowsExecutionsReplay({
+      id,
+      mode: opts.mode,
+      env: opts.env,
+      timeout: opts.timeout,
+      show: opts.show?.flatMap((s: string) => s.split(',')),
+      hide: opts.hide?.flatMap((s: string) => s.split(',')),
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const workflowsExecutionsTail = new Command()
+  .description(
+    'Poll an execution until it reaches a terminal state (success / failed / cancelled). ' +
+      'Optional --save-trace and --save-steps-to persist the trace on completion.',
+  )
+  .arguments('<id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--interval <seconds:number>', 'Poll interval in seconds (default 2).')
+  .option('--timeout <seconds:number>', 'Client-side cutoff. Exits 124 if exceeded.')
+  .option('--save-trace <path:string>', 'On completion, save the full trace JSON to this path.')
+  .option(
+    '--save-steps-to <dir:string>',
+    'On completion, write one JSON file per step into this directory.',
+  )
+  .option('--show-secrets', 'Include secret values in saved trace / step output.', {
+    default: false,
+  })
+  .option(
+    '-j, --json',
+    'Emit one JSON line per poll, then the final trace JSON at the end.',
+    { default: false },
+  )
+  .action(async (opts, id) => {
+    await runWorkflowsExecutionsTail({
+      id,
+      interval: opts.interval,
+      timeout: opts.timeout,
+      saveTrace: opts.saveTrace,
+      saveStepsTo: opts.saveStepsTo,
+      showSecrets: opts.showSecrets,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const workflowsExecutions = new Command()
+  .description('Inspect, tail, download, and replay workflow executions.')
+  .command('list', workflowsExecutionsList)
+  .command('get', workflowsExecutionsGet)
+  .command('logs', workflowsExecutionsLogs)
+  .command('download', workflowsExecutionsDownload)
+  .command('replay', workflowsExecutionsReplay)
+  .command('tail', workflowsExecutionsTail);
+
+const workflowsValidate = new Command()
+  .description(
+    'Validate a workflow definition locally (zero network by default; --strict adds a server round-trip).',
+  )
+  .arguments('[file:string]')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (required for --strict)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--from-stdin', 'Read the definition JSON from stdin instead of a file.', {
+    default: false,
+  })
+  .option(
+    '--strict',
+    'Also validate step configs against the live /workflows/steps/info schemas.',
+    {
+      default: false,
+    },
+  )
+  .option('-j, --json', 'Emit JSON instead of human-readable error list.', { default: false })
+  .example('Validate a file', 'quickflo workflows validate ./my-wf.json')
+  .example('Pipe from stdout', 'cat ./my-wf.json | quickflo workflows validate --from-stdin')
+  .example(
+    'Validate with server schema check',
+    'quickflo workflows validate ./my-wf.json --strict -o abcd',
+  )
+  .action(async (opts, file) => {
+    await runWorkflowsValidate({
+      source: file,
+      fromStdin: opts.fromStdin,
+      strict: opts.strict,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const workflowsStepsList = new Command()
+  .description('List every step type available to workflows.')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-j, --json', 'Emit JSON instead of a table.', { default: false })
+  .action(async (opts) => {
+    await runWorkflowsStepsList({
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const workflowsStepsGet = new Command()
+  .description('Show one step type, including its input/output JSON Schemas.')
+  .arguments('<type:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-j, --json', 'Emit JSON instead of a human view.', { default: false })
+  .action(async (opts, type) => {
+    await runWorkflowsStepsGet({
+      type,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const workflowsSteps = new Command()
+  .description('Discover available step types (catalog with input/output schemas).')
+  .command('list', workflowsStepsList)
+  .command('get', workflowsStepsGet);
+
 const workflows = new Command()
   .description('Workflow management commands.')
   .command('list', workflowsList)
   .command('get', workflowsGet)
   .command('push', workflowsPush)
-  .command('pull', workflowsPull);
+  .command('pull', workflowsPull)
+  .command('run', workflowsRun)
+  .command('executions', workflowsExecutions)
+  .command('validate', workflowsValidate)
+  .command('steps', workflowsSteps);
 
 const packagesList = new Command()
   .description(
@@ -981,6 +1299,23 @@ const connectionsTypes = new Command()
   .command('list', connectionsTypesList)
   .command('schema', connectionsTypesSchema);
 
+const connectionsTest = new Command()
+  .description(
+    'Verify a connection by hitting POST /connections/:id/test. The endpoint is not yet shipped on every server — the command surfaces a clear "not implemented" error in that case.',
+  )
+  .arguments('<ref:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-j, --json', 'Emit the raw API response (if successful).', { default: false })
+  .action(async (opts, ref) => {
+    await runConnectionsTest({
+      ref,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
 const connections = new Command()
   .description('Manage saved credentials for external services.')
   .command('list', connectionsList)
@@ -990,6 +1325,7 @@ const connections = new Command()
   .command('pull', connectionsPull)
   .command('push', connectionsPush)
   .command('delete', connectionsDelete)
+  .command('test', connectionsTest)
   .command('types', connectionsTypes);
 
 // ─── Environments ────────────────────────────────────────────────────────────
@@ -1590,15 +1926,28 @@ const dataStores = new Command()
   .command('import', dsImport)
   .command('export', dsExport);
 
-await new Command()
-  .name('quickflo')
-  .version('1.3.0')
-  .description('QuickFlo command-line interface.')
-  .command('auth', auth)
-  .command('workflows', workflows)
-  .command('packages', packages)
-  .command('connections', connections)
-  .command('environments', environments)
-  .command('triggers', triggers)
-  .command('data-stores', dataStores)
-  .parse(Deno.args);
+// Surface a JSON error envelope when any command in the tree was given -j/--json.
+// Cliffy parses per-command, so the root catch can't see per-command flags
+// directly — scan argv to honor the contract at the top-level boundary.
+const wantsJsonErrors = Deno.args.some((a) => a === '-j' || a === '--json');
+if (Deno.args.some((a) => a === '--quiet')) setQuiet(true);
+
+try {
+  await new Command()
+    .name('quickflo')
+    .version('1.5.0')
+    .description('QuickFlo command-line interface.')
+    .globalOption('--quiet', 'Suppress progress output; errors still print to stderr.', {
+      action: () => setQuiet(true),
+    })
+    .command('auth', auth)
+    .command('workflows', workflows)
+    .command('packages', packages)
+    .command('connections', connections)
+    .command('environments', environments)
+    .command('triggers', triggers)
+    .command('data-stores', dataStores)
+    .parse(Deno.args);
+} catch (err) {
+  Deno.exit(printError(err, wantsJsonErrors));
+}
