@@ -364,6 +364,105 @@ quickflo packages uninstall <install-id> --yes -o customer-org
 `terraform apply` since reinstall is destructive (workflows can be added,
 replaced, or removed). Use `--apply` once you're satisfied with the diff.
 
+## Execution + observability
+
+Close the **author → run → observe → fix** loop without leaving the terminal.
+
+### Run a workflow manually
+
+```bash
+# Sync: wait for the result, print per-step table + output JSON
+quickflo workflows run my-wf --input '{"x":1}' --mode sync
+
+# Async: queue + print just the executionId
+quickflo workflows run my-wf --input-file ./payload.json --mode async
+
+# Override the environment used for variable resolution
+quickflo workflows run my-wf --env staging --input '{}'
+
+# Filter per-step output
+quickflo workflows run my-wf --show fetchUsers,transform --input '{}'
+
+# CLI-side timeout (sync only). Exits 124 if exceeded.
+quickflo workflows run my-wf --input '{}' --timeout 30
+```
+
+### Inspect execution traces
+
+```bash
+# Find recent failures
+quickflo workflows runs list --status failed --since 1h
+
+# Full trace metadata + step paths
+quickflo workflows runs get <run-id>
+
+# One step's output
+quickflo workflows runs logs <run-id> --step fetchUsers
+
+# Full trace data (and show secrets)
+quickflo workflows runs logs <run-id> --full --show-secrets
+
+# Save the trace JSON to disk
+quickflo workflows runs download <run-id> --out ./trace.json
+
+# Re-run with the same initial input
+quickflo workflows runs replay <run-id>
+```
+
+### Validate before pushing
+
+`workflows validate` runs locally with **zero network calls** by default — the
+right tool for AI agents (instant feedback) and CI (no token needed for
+syntactic checks).
+
+```bash
+quickflo workflows validate ./my-wf.json
+cat ./my-wf.json | quickflo workflows validate --from-stdin
+quickflo workflows validate ./my-wf.json -j           # JSON for CI
+quickflo workflows validate ./my-wf.json --strict -o abcd  # + server schema check
+```
+
+Exits 0 on success, 3 on validation failure.
+
+### Discover step types
+
+```bash
+quickflo workflows steps list             # table of every step type
+quickflo workflows steps get http-request # input/output JSON schemas + example
+```
+
+### Test a connection
+
+```bash
+quickflo connections test my-stripe-conn
+```
+
+The server endpoint is not yet shipped on every deployment; the CLI surfaces a
+clear "not implemented" error in that case so the flag set stays stable.
+
+### AI-agent / CI loop
+
+The shape of the workflow that makes the CLI worth using from an agent:
+
+```bash
+quickflo workflows validate ./patched.json -j || exit $?
+quickflo workflows push -d ./workflows -y
+quickflo workflows run my-wf --input "$INPUT" --timeout 60 \
+  || quickflo workflows runs list --status failed --since 5m -j \
+       | jq -r '.[0].id' \
+       | xargs -I{} quickflo workflows runs logs {} --step "$FAILED_STEP"
+```
+
+## Non-interactive contract
+
+Designed so scripts and agents can depend on stable behavior:
+
+- **Auto-yes on confirm prompts when stdin is not a TTY** — matches `gh`, `npm`. Pass `--yes` explicitly in scripts to make intent visible.
+- **`-j/--json` on every list/get/inspect command** — JSON payload to stdout, banner / progress to stderr.
+- **`--quiet`** suppresses progress output; errors still print.
+- **JSON error envelope** — when `-j` was passed, errors land on stderr as `{"error":{"code":"...","message":"...","status":...,"path":"...","details":...}}`.
+- **Stable exit codes** — see [EXIT_CODES.md](./EXIT_CODES.md). `0` ok, `1` user error, `2` server error, `3` validation, `124` timeout, `130` interrupted.
+
 ## Filter DSL
 
 `--where <field>:<op>:<value>` — repeatable, available on every list/pull command.
