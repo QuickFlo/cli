@@ -1,28 +1,29 @@
 /**
- * `quickflo triggers get <workflow> <id>` — fetch one trigger including the
- * computed `webhookUrl` / `formUrl` / `eventWebhookUrl` fields.
+ * `quickflo triggers get <ref>` — fetch one trigger via the top-level
+ * `/triggers/:id` endpoint. `<ref>` is a UUID or a name; pass
+ * `-w <workflow>` to disambiguate when the same name lives on multiple
+ * workflows (customer-owned vs. package-installed copies).
  */
 
 import { type ApiClient, apiFetch } from './api.ts';
 import { type Lookup } from './refs.ts';
-import { resolveWorkflowRef } from './workflow-refs.ts';
 import { openSession } from './session.ts';
+import { resolveTriggerRef } from './trigger-refs.ts';
 import { type TriggerRow } from './triggers-list.ts';
 
 export async function fetchTrigger(
   client: ApiClient,
-  workflowId: string,
   triggerId: string,
 ): Promise<TriggerRow & Record<string, unknown>> {
   return await apiFetch<TriggerRow & Record<string, unknown>>(
     client,
-    `/workflows/${workflowId}/triggers/${triggerId}`,
+    `/triggers/${triggerId}`,
   );
 }
 
 export interface TriggersGetOptions {
-  workflow: string;
-  id: string;
+  ref: string;
+  workflow?: string;
   by?: Lookup;
   apiUrl?: string;
   orgId?: string;
@@ -30,7 +31,7 @@ export interface TriggersGetOptions {
 
 export async function runTriggersGet(opts: TriggersGetOptions): Promise<void> {
   const { client } = await openSession(opts, 'triggers get');
-  const wf = await resolveWorkflowRef(client, opts.workflow, opts.by);
-  const trigger = await fetchTrigger(client, wf.id, opts.id);
+  const resolved = await resolveTriggerRef(client, opts.ref, opts.workflow, opts.by);
+  const trigger = await fetchTrigger(client, resolved.id);
   console.log(JSON.stringify(trigger, null, 2));
 }

@@ -1558,12 +1558,12 @@ const environments = new Command()
 const triggerTypeType = new EnumType(['webhook', 'schedule', 'event', 'form']);
 
 const triggersList = new Command()
-  .description('List triggers for a workflow.')
+  .description('List triggers. Org-wide by default; --workflow scopes to one workflow.')
   .type('by', byType)
-  .arguments('<workflow:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--by <kind:by>', 'Force workflow lookup mode')
+  .option('-w, --workflow <ref:string>', 'Scope to one workflow (UUID, SUID, or name)')
+  .option('--by <kind:by>', 'Force workflow lookup mode (only with --workflow)')
   .option('--where <expr:string>', 'Filter expression <field>:<op>:<value>. Repeatable.', {
     collect: true,
   })
@@ -1572,9 +1572,9 @@ const triggersList = new Command()
   })
   .option('--limit <n:number>', 'Max results')
   .option('-j, --json', 'Emit JSON', { default: false })
-  .action(async (opts, workflow) => {
+  .action(async (opts) => {
     await runTriggersList({
-      workflow,
+      workflow: opts.workflow,
       by: opts.by,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
@@ -1586,16 +1586,17 @@ const triggersList = new Command()
   });
 
 const triggersGet = new Command()
-  .description('Get one trigger (includes computed URLs).')
+  .description('Get one trigger by UUID or name (includes computed URLs).')
   .type('by', byType)
-  .arguments('<workflow:string> <id:string>')
+  .arguments('<ref:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--by <kind:by>', 'Force workflow lookup mode')
-  .action(async (opts, workflow, id) => {
+  .option('-w, --workflow <ref:string>', 'Scope name lookup to one workflow (disambiguator)')
+  .option('--by <kind:by>', 'Force workflow lookup mode (only with --workflow)')
+  .action(async (opts, ref) => {
     await runTriggersGet({
-      workflow,
-      id,
+      ref,
+      workflow: opts.workflow,
       by: opts.by,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
@@ -1603,19 +1604,21 @@ const triggersGet = new Command()
   });
 
 const triggersCreate = new Command()
-  .description('Create a trigger for a workflow.')
+  .description('Create a trigger on a workflow (the one verb that needs --workflow).')
   .type('by', byType)
   .type('triggerType', triggerTypeType)
-  .arguments('<workflow:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-w, --workflow <ref:string>', 'Target workflow (UUID, SUID, or name)', {
+    required: true,
+  })
   .option('--by <kind:by>', 'Force workflow lookup mode')
   .option('--type <kind:triggerType>', 'Trigger type (required unless --from-file)')
   .option('--name <text:string>', 'Trigger name')
   .option('--from-file <path:file>', 'JSON body for the trigger config')
-  .action(async (opts, workflow) => {
+  .action(async (opts) => {
     await runTriggersCreate({
-      workflow,
+      workflow: opts.workflow,
       type: opts.type,
       name: opts.name,
       fromFile: opts.fromFile,
@@ -1626,40 +1629,42 @@ const triggersCreate = new Command()
   });
 
 const triggersUpdate = new Command()
-  .description('Update a trigger (name, enabled, config).')
+  .description('Update a trigger (name, enabled, config) by UUID or name.')
   .type('by', byType)
-  .arguments('<workflow:string> <id:string>')
+  .arguments('<ref:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--by <kind:by>', 'Force workflow lookup mode')
+  .option('-w, --workflow <ref:string>', 'Scope name lookup to one workflow (disambiguator)')
+  .option('--by <kind:by>', 'Force workflow lookup mode (only with --workflow)')
   .option('--name <text:string>', 'New name')
   .option('--enabled <bool:string>', 'true | false')
   .option('--from-file <path:file>', 'JSON body to merge (typically the `config` block)')
-  .action(async (opts, workflow, id) => {
+  .action(async (opts, ref) => {
     await runTriggersUpdate({
-      workflow,
-      id,
+      ref,
+      workflow: opts.workflow,
+      by: opts.by,
       name: opts.name,
       enabled: opts.enabled,
       fromFile: opts.fromFile,
-      by: opts.by,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
     });
   });
 
 const triggersDelete = new Command()
-  .description('Delete a trigger.')
+  .description('Delete a trigger by UUID or name.')
   .type('by', byType)
-  .arguments('<workflow:string> <id:string>')
+  .arguments('<ref:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--by <kind:by>', 'Force workflow lookup mode')
+  .option('-w, --workflow <ref:string>', 'Scope name lookup to one workflow (disambiguator)')
+  .option('--by <kind:by>', 'Force workflow lookup mode (only with --workflow)')
   .option('--yes', 'Skip the confirmation prompt', { default: false })
-  .action(async (opts, workflow, id) => {
+  .action(async (opts, ref) => {
     await runTriggersDelete({
-      workflow,
-      id,
+      ref,
+      workflow: opts.workflow,
       by: opts.by,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
@@ -1668,16 +1673,17 @@ const triggersDelete = new Command()
   });
 
 const triggersEnable = new Command()
-  .description('Enable a trigger (resumes schedule triggers).')
+  .description('Enable a trigger by UUID or name (resumes schedule triggers).')
   .type('by', byType)
-  .arguments('<workflow:string> <id:string>')
+  .arguments('<ref:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--by <kind:by>', 'Force workflow lookup mode')
-  .action(async (opts, workflow, id) => {
+  .option('-w, --workflow <ref:string>', 'Scope name lookup to one workflow (disambiguator)')
+  .option('--by <kind:by>', 'Force workflow lookup mode (only with --workflow)')
+  .action(async (opts, ref) => {
     await runTriggersEnable({
-      workflow,
-      id,
+      ref,
+      workflow: opts.workflow,
       by: opts.by,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
@@ -1685,16 +1691,17 @@ const triggersEnable = new Command()
   });
 
 const triggersDisable = new Command()
-  .description('Disable a trigger (pauses schedule triggers).')
+  .description('Disable a trigger by UUID or name (pauses schedule triggers).')
   .type('by', byType)
-  .arguments('<workflow:string> <id:string>')
+  .arguments('<ref:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--by <kind:by>', 'Force workflow lookup mode')
-  .action(async (opts, workflow, id) => {
+  .option('-w, --workflow <ref:string>', 'Scope name lookup to one workflow (disambiguator)')
+  .option('--by <kind:by>', 'Force workflow lookup mode (only with --workflow)')
+  .action(async (opts, ref) => {
     await runTriggersDisable({
-      workflow,
-      id,
+      ref,
+      workflow: opts.workflow,
       by: opts.by,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
@@ -1702,16 +1709,19 @@ const triggersDisable = new Command()
   });
 
 const triggersRotateSecret = new Command()
-  .description("Rotate a webhook trigger's secret. The new secret is printed once.")
+  .description(
+    "Rotate a webhook trigger's secret by UUID or name. The new secret is printed once.",
+  )
   .type('by', byType)
-  .arguments('<workflow:string> <id:string>')
+  .arguments('<ref:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--by <kind:by>', 'Force workflow lookup mode')
-  .action(async (opts, workflow, id) => {
+  .option('-w, --workflow <ref:string>', 'Scope name lookup to one workflow (disambiguator)')
+  .option('--by <kind:by>', 'Force workflow lookup mode (only with --workflow)')
+  .action(async (opts, ref) => {
     await runTriggersRotateSecret({
-      workflow,
-      id,
+      ref,
+      workflow: opts.workflow,
       by: opts.by,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
@@ -1719,18 +1729,19 @@ const triggersRotateSecret = new Command()
   });
 
 const triggersDuplicate = new Command()
-  .description('Duplicate a trigger to another workflow.')
+  .description('Duplicate a trigger (by UUID or name) to another workflow.')
   .type('by', byType)
-  .arguments('<workflow:string> <id:string>')
+  .arguments('<ref:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
-  .option('--by <kind:by>', 'Force workflow lookup mode')
+  .option('-w, --workflow <ref:string>', 'Scope name lookup to one workflow (disambiguator)')
+  .option('--by <kind:by>', 'Force workflow lookup mode (only with --workflow)')
   .option('--to <workflow:string>', 'Target workflow ref', { required: true })
   .option('--name <text:string>', 'Name for the duplicated trigger')
-  .action(async (opts, workflow, id) => {
+  .action(async (opts, ref) => {
     await runTriggersDuplicate({
-      workflow,
-      id,
+      ref,
+      workflow: opts.workflow,
       to: opts.to,
       name: opts.name,
       by: opts.by,

@@ -279,28 +279,39 @@ quickflo environments delete staging                       # confirm prompt
 
 ## Triggers
 
-Webhook / schedule / event / form entry points for workflows. Live at the top
-level (`quickflo triggers <action> <workflow>`) to keep keystrokes flat.
+Webhook / schedule / event / form entry points for workflows. First-class
+resource — every verb except `create` is addressable by trigger ref alone, no
+workflow needed. A `<ref>` is either a UUID or a trigger name; if the same
+name lives on multiple workflows (e.g. customer-owned vs. package-installed
+copies), pass `-w <workflow>` as a disambiguator.
+
+`list` is org-wide by default and renders a `WORKFLOW` column with workflow
+names plus a `PKG` column when any row was installed from a package; pass
+`-w <workflow>` to scope to one workflow (both columns are then redundant
+and hidden).
 
 ```bash
 # Inspect
-quickflo triggers list 'My Workflow'                       # workflow ref: UUID | name
-quickflo triggers get 'My Workflow' <trigger-id>          # includes computed webhookUrl/formUrl
+quickflo triggers list                                     # all triggers, all workflows
+quickflo triggers list -w 'My Workflow'                    # scoped to one workflow
+quickflo triggers get primary                              # by name (org-wide)
+quickflo triggers get primary -w 'My Workflow'             # disambiguate by workflow
+quickflo triggers get <trigger-uuid>                       # by UUID
 
-# Create
-quickflo triggers create 'My Workflow' --type webhook --name primary
-quickflo triggers create 'My Workflow' --type schedule --from-file ./daily.json
+# Create (the one verb that needs a workflow)
+quickflo triggers create -w 'My Workflow' --type webhook --name primary
+quickflo triggers create -w 'My Workflow' --type schedule --from-file ./daily.json
 
 # Update / toggle
-quickflo triggers update 'My Workflow' <id> --enabled false
-quickflo triggers update 'My Workflow' <id> --from-file ./new-config.json
-quickflo triggers enable 'My Workflow' <id>
-quickflo triggers disable 'My Workflow' <id>
+quickflo triggers update primary --enabled false
+quickflo triggers update primary --from-file ./new-config.json
+quickflo triggers enable primary
+quickflo triggers disable primary
 
 # Lifecycle
-quickflo triggers rotate-secret 'My Workflow' <id>        # secret printed once
-quickflo triggers duplicate 'My Workflow' <id> --to 'Other Workflow' --name 'Copy'
-quickflo triggers delete 'My Workflow' <id> --yes
+quickflo triggers rotate-secret primary                    # secret printed once
+quickflo triggers duplicate primary --to 'Other Workflow' --name 'Copy'
+quickflo triggers delete primary --yes
 ```
 
 ## Data stores

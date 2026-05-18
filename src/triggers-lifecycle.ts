@@ -1,13 +1,18 @@
 /**
  * Trigger lifecycle verbs:
- *   - `enable <wf> <id>`         → POST /:id/resume   (was `pause` flag)
- *   - `disable <wf> <id>`        → POST /:id/pause
- *   - `rotate-secret <wf> <id>`  → POST /:id/regenerate-secret (warns secret is shown ONCE)
- *   - `duplicate <wf> <id> --to <wf-ref> [--name X]`
+ *   - `enable <ref>`         → POST /:wfId/triggers/:id/resume (schedule) or PATCH /triggers/:id
+ *   - `disable <ref>`        → POST /:wfId/triggers/:id/pause   (schedule) or PATCH /triggers/:id
+ *   - `rotate-secret <ref>`  → POST /:wfId/triggers/:id/regenerate-secret (secret shown ONCE)
+ *   - `duplicate <ref> --to <wf-ref> [--name X]`
  *
- * The `enable` / `disable` verbs map onto schedule trigger pause/resume on
- * the server (which also toggles `enabled`). Non-schedule triggers fall
- * through to a PATCH `{ enabled: ... }` so the verbs work uniformly.
+ * `<ref>` is a UUID or a name; use `-w <workflow>` to disambiguate
+ * collisions. The pause/resume/regenerate-secret/duplicate endpoints are
+ * only mounted under `/workflows/:wfId/triggers/:id/...`, so for those we
+ * fetch the trigger by ID first to discover its workflowId and then
+ * dispatch to the nested verb. Callers never have to know the workflow ref.
+ *
+ * For non-schedule triggers, `enable`/`disable` fall through to a top-level
+ * `PATCH /triggers/:id` with `{ enabled }` — no workflow lookup at all.
  */
 
 import { colors } from '@cliffy/ansi/colors';
@@ -16,6 +21,7 @@ import { type Lookup } from './refs.ts';
 import { resolveWorkflowRef } from './workflow-refs.ts';
 import { openSession } from './session.ts';
 import { fetchTrigger } from './triggers-get.ts';
+import { resolveTriggerRef } from './trigger-refs.ts';
 
 interface TriggerWithSecret extends Record<string, unknown> {
   id: string;
@@ -25,7 +31,8 @@ interface TriggerWithSecret extends Record<string, unknown> {
 }
 
 async function toggleTrigger(
-  args: { workflow: string; id: string; enable: boolean } & {
+  args: { ref: string; enable: boolean } & {
+    workflow?: string;
     by?: Lookup;
     apiUrl?: string;
     orgId?: string;
@@ -33,28 +40,38 @@ async function toggleTrigger(
   label: string,
 ): Promise<void> {
   const { client } = await openSession(args, `triggers ${label}`);
-  const wf = await resolveWorkflowRef(client, args.workflow, args.by);
-  const existing = await fetchTrigger(client, wf.id, args.id);
+  const resolved = await resolveTriggerRef(client, args.ref, args.workflow, args.by);
+  const existing = await fetchTrigger(client, resolved.id);
   const action = args.enable ? 'resume' : 'pause';
 
   if (existing.type === 'schedule') {
-    await apiFetch(client, `/workflows/${wf.id}/triggers/${args.id}/${action}`, {
-      method: 'POST',
-    });
+    const workflowId = (existing['workflowId'] as string | undefined) ?? resolved.workflowId;
+    if (!workflowId) {
+      throw new Error(
+        `Trigger ${resolved.id} has no workflowId — cannot ${action} schedule.`,
+      );
+    }
+    await apiFetch(
+      client,
+      `/workflows/${workflowId}/triggers/${resolved.id}/${action}`,
+      { method: 'POST' },
+    );
   } else {
-    await apiFetch(client, `/workflows/${wf.id}/triggers/${args.id}`, {
+    await apiFetch(client, `/triggers/${resolved.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ enabled: args.enable }),
     });
   }
   console.error(
-    `${colors.green('✓')} ${args.enable ? 'enabled' : 'disabled'} trigger ${colors.dim(args.id)}`,
+    `${colors.green('✓')} ${args.enable ? 'enabled' : 'disabled'} trigger ${
+      colors.dim(resolved.id)
+    }`,
   );
 }
 
 export interface TriggersEnableOptions {
-  workflow: string;
-  id: string;
+  ref: string;
+  workflow?: string;
   by?: Lookup;
   apiUrl?: string;
   orgId?: string;
@@ -69,8 +86,8 @@ export function runTriggersDisable(opts: TriggersEnableOptions): Promise<void> {
 }
 
 export interface TriggersRotateSecretOptions {
-  workflow: string;
-  id: string;
+  ref: string;
+  workflow?: string;
   by?: Lookup;
   apiUrl?: string;
   orgId?: string;
@@ -80,14 +97,21 @@ export async function runTriggersRotateSecret(
   opts: TriggersRotateSecretOptions,
 ): Promise<void> {
   const { client } = await openSession(opts, 'triggers rotate-secret');
-  const wf = await resolveWorkflowRef(client, opts.workflow, opts.by);
+  const resolved = await resolveTriggerRef(client, opts.ref, opts.workflow, opts.by);
+  const existing = await fetchTrigger(client, resolved.id);
+  const workflowId = (existing['workflowId'] as string | undefined) ?? resolved.workflowId;
+  if (!workflowId) {
+    throw new Error(
+      `Trigger ${resolved.id} has no workflowId — cannot rotate secret.`,
+    );
+  }
   const trigger = await apiFetch<TriggerWithSecret>(
     client,
-    `/workflows/${wf.id}/triggers/${opts.id}/regenerate-secret`,
+    `/workflows/${workflowId}/triggers/${resolved.id}/regenerate-secret`,
     { method: 'POST' },
   );
   console.error(
-    `${colors.green('✓')} rotated secret for trigger ${colors.dim(opts.id)}`,
+    `${colors.green('✓')} rotated secret for trigger ${colors.dim(resolved.id)}`,
   );
   console.error(
     colors.yellow(
@@ -98,8 +122,8 @@ export async function runTriggersRotateSecret(
 }
 
 export interface TriggersDuplicateOptions {
-  workflow: string;
-  id: string;
+  ref: string;
+  workflow?: string;
   to: string;
   name?: string;
   by?: Lookup;
@@ -111,17 +135,24 @@ export async function runTriggersDuplicate(
   opts: TriggersDuplicateOptions,
 ): Promise<void> {
   const { client } = await openSession(opts, 'triggers duplicate');
-  const sourceWf = await resolveWorkflowRef(client, opts.workflow, opts.by);
+  const resolved = await resolveTriggerRef(client, opts.ref, opts.workflow, opts.by);
+  const existing = await fetchTrigger(client, resolved.id);
+  const sourceWorkflowId = (existing['workflowId'] as string | undefined) ?? resolved.workflowId;
+  if (!sourceWorkflowId) {
+    throw new Error(
+      `Trigger ${resolved.id} has no workflowId — cannot duplicate.`,
+    );
+  }
   const targetWf = await resolveWorkflowRef(client, opts.to);
   const body: Record<string, unknown> = { targetWorkflowId: targetWf.id };
   if (opts.name !== undefined) body['name'] = opts.name;
   const trigger = await apiFetch<Record<string, unknown>>(
     client,
-    `/workflows/${sourceWf.id}/triggers/${opts.id}/duplicate`,
+    `/workflows/${sourceWorkflowId}/triggers/${resolved.id}/duplicate`,
     { method: 'POST', body: JSON.stringify(body) },
   );
   console.error(
-    `${colors.green('✓')} duplicated trigger ${colors.dim(opts.id)} → ${
+    `${colors.green('✓')} duplicated trigger ${colors.dim(resolved.id)} → ${
       colors.dim(String(trigger['id']))
     } on ${targetWf.name}`,
   );

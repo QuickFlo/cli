@@ -1,8 +1,12 @@
 /**
- * `quickflo triggers create <workflow>` — create a trigger for a workflow.
+ * `quickflo triggers create --workflow <ref>` — create a trigger for a workflow.
+ *
+ * Create is the one verb that genuinely needs a parent workflow ref (the
+ * backend mounts it at `POST /workflows/:wfId/triggers`), so `--workflow`
+ * stays required here.
  *
  * Mode A — minimal webhook (no `--from-file`):
- *   `triggers create <wf> --type webhook [--name X]`
+ *   `triggers create -w <wf> --type webhook [--name X]`
  *   builds a default `{ type: 'webhook', config: { webhook: { method: POST, authType: token, ... } } }`
  *   payload server-side (same defaults as `workflows push -w`).
  *
