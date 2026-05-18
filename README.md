@@ -133,7 +133,7 @@ quickflo workflows list --tags stripe,billing               # OR by tag
 quickflo workflows list --all -j > all-workflows.json       # paginate everything
 
 # Get one
-quickflo workflows get abcd                                 # auto-detect (UUID | SUID | name)
+quickflo workflows get 'My Workflow'                        # auto-detect (UUID | name)
 quickflo workflows get abcd > my-workflow.json              # save pushable shape
 quickflo workflows get 'My Workflow' --by name              # disambiguate
 quickflo workflows get abcd -j                              # raw API record
@@ -284,7 +284,7 @@ level (`quickflo triggers <action> <workflow>`) to keep keystrokes flat.
 
 ```bash
 # Inspect
-quickflo triggers list 'My Workflow'                       # workflow ref: UUID | SUID | name
+quickflo triggers list 'My Workflow'                       # workflow ref: UUID | name
 quickflo triggers get 'My Workflow' <trigger-id>          # includes computed webhookUrl/formUrl
 
 # Create

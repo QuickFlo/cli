@@ -376,7 +376,7 @@ const workflowsList = new Command()
 
 const workflowsGet = new Command()
   .description(
-    'Print one workflow as pushable JSON (auto-detects SUID / UUID / name).',
+    'Print one workflow as pushable JSON (auto-detects UUID / name; pass --by suid for the rare suid lookup).',
   )
   .type('by', byType)
   .arguments('<ref:string>')
@@ -392,11 +392,11 @@ const workflowsGet = new Command()
   .option('-j, --json', 'Emit the raw API record instead of pushable shape', {
     default: false,
   })
-  .example('By SUID', 'quickflo workflows get abcd -o abcd')
-  .example('By name', "quickflo workflows get 'My Workflow' --by name -o abcd")
+  .example('By name (default)', "quickflo workflows get 'My Workflow' -o abcd")
+  .example('By UUID', 'quickflo workflows get 11111111-2222-3333-4444-555555555555 -o abcd')
   .example(
     'Save to a file',
-    'quickflo workflows get abcd -o abcd > ./my-workflow.json',
+    "quickflo workflows get 'My Workflow' -o abcd > ./my-workflow.json",
   )
   .action(async (opts, ref) => {
     await runWorkflowsGet({
