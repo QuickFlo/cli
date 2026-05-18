@@ -154,21 +154,54 @@ fi
 # Dispatch each independent `gcloud storage cp` in the background. They
 # target different prefixes/files so there's no ordering constraint —
 # gcloud already parallelizes within one cp; this overlaps the three cps.
+#
+# Each upload's stdout/stderr is streamed live with a [label] prefix so you
+# can see which transfer is slow or hanging in real time, and is also tee'd
+# to a log file for post-hoc inspection.
 declare -a upload_pids=()
 declare -a upload_logs=()
 declare -a upload_labels=()
+declare -a upload_starts=()
 
 start_upload() {
   local label="$1"; shift
   local log="${DIST_DIR}/.upload-${label}.log"
+  local args=("$@")
+  local dest="${args[${#args[@]}-1]}"
+
+  # Summarize what's being shipped: existing files among the args (everything
+  # before the gs:// destination), with their byte size.
+  local files=()
+  local i
+  for (( i = 0; i < ${#args[@]} - 1; i++ )); do
+    [[ -f "${args[$i]}" ]] && files+=("${args[$i]}")
+  done
+
+  echo
+  echo "▶ [${label}] dispatching ${#files[@]} file(s) → ${dest}"
+  local f size
+  for f in "${files[@]}"; do
+    size="$(wc -c < "$f" | awk '{print $1}')"
+    printf '    %-55s %12s bytes\n' "${f##*/}" "${size}"
+  done
+
   upload_labels+=("${label}")
   upload_logs+=("${log}")
-  ( "$@" ) >"${log}" 2>&1 &
+  upload_starts+=("$(date +%s)")
+
+  # awk with fflush() forces line-buffered prefixing so progress shows up
+  # promptly instead of getting stuck behind sed's default line buffering on
+  # darwin. pipefail (inherited) makes the subshell exit non-zero if gcloud
+  # fails, regardless of tee/awk succeeding.
+  (
+    "${args[@]}" 2>&1 | tee "${log}" | awk -v p="  [${label}] " '{ print p $0; fflush() }'
+  ) &
   upload_pids+=($!)
+  echo "  [${label}] running (pid $!, log: ${log##*/})"
 }
 
 echo
-echo "▶ uploading in parallel"
+echo "▶ uploading in parallel — $(date '+%H:%M:%S')"
 
 # Versioned: long cache (immutable artifacts).
 start_upload "versioned" \
@@ -193,18 +226,23 @@ if [[ "${UPDATE_LATEST}" == "1" ]]; then
       "gs://${BUCKET}/${BUCKET_PREFIX}/install.sh"
 fi
 
+echo
+echo "▶ waiting on ${#upload_pids[@]} upload(s)..."
+
 upload_failed=0
 for i in "${!upload_pids[@]}"; do
   label="${upload_labels[$i]}"
   if wait "${upload_pids[$i]}"; then
-    echo "  ✓ ${label}"
+    elapsed=$(( $(date +%s) - upload_starts[i] ))
+    echo "  ✓ ${label} (${elapsed}s)"
   else
-    echo "  ✗ ${label} — log follows:"
-    sed 's/^/    /' "${upload_logs[$i]}"
+    elapsed=$(( $(date +%s) - upload_starts[i] ))
+    echo "  ✗ ${label} (${elapsed}s) — output above; full log: ${upload_logs[$i]}"
     upload_failed=1
   fi
 done
-rm -f "${DIST_DIR}"/.upload-*.log
+# Keep logs on failure so you can re-read them; clean up on success.
+[[ "${upload_failed}" == "0" ]] && rm -f "${DIST_DIR}"/.upload-*.log
 
 if [[ "${upload_failed}" == "1" ]]; then
   echo "ERROR: one or more uploads failed" >&2
