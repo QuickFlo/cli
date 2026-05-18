@@ -1,6 +1,6 @@
 /**
- * `quickflo workflows runs get <id>` — fetch one execution trace and render
- * top-level metadata + step paths.
+ * `quickflo workflows executions get <id>` — fetch one execution trace and
+ * render top-level metadata + step paths.
  */
 
 import { colors } from '@cliffy/ansi/colors';
@@ -21,7 +21,7 @@ interface ExecutionTrace {
   error?: { message?: string } | string;
 }
 
-export interface WorkflowsRunsGetOptions {
+export interface WorkflowsExecutionsGetOptions {
   id: string;
   apiUrl?: string;
   orgId?: string;
@@ -36,15 +36,17 @@ function colorStatus(s: string): string {
   return s;
 }
 
-export async function runWorkflowsRunsGet(opts: WorkflowsRunsGetOptions): Promise<void> {
-  const { client } = await openSession(opts, 'workflows runs get');
+export async function runWorkflowsExecutionsGet(
+  opts: WorkflowsExecutionsGetOptions,
+): Promise<void> {
+  const { client } = await openSession(opts, 'workflows executions get');
   const trace = await apiFetch<ExecutionTrace>(client, `/execution-traces/${opts.id}`);
 
   if (opts.json) {
     console.log(JSON.stringify(trace, null, 2));
     return;
   }
-  console.log(colors.bold(`trace: ${trace.id}`));
+  console.log(colors.bold(`execution: ${trace.id}`));
   console.log(`  workflow:    ${trace.workflowName ?? '—'} (${trace.workflowId ?? '—'})`);
   console.log(`  status:      ${colorStatus(trace.status ?? '—')}`);
   console.log(`  startedAt:   ${trace.startedAt ?? '—'}`);

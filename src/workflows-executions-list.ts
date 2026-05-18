@@ -1,6 +1,6 @@
 /**
- * `quickflo workflows runs list` — query execution traces. Default order
- * `startedAt:DESC`, default limit 25. Convenience flags `--workflow`,
+ * `quickflo workflows executions list` — query execution traces. Default
+ * order `startedAt:DESC`, default limit 25. Convenience flags `--workflow`,
  * `--status`, `--since <duration>` layer on top of the standard `--where`
  * grammar. Table to stdout, banner / counts to stderr.
  */
@@ -57,7 +57,7 @@ function formatTs(iso?: string): string {
 
 function printTable(rows: TraceRow[]): void {
   if (rows.length === 0) {
-    console.log(colors.dim('(no execution traces)'));
+    console.log(colors.dim('(no executions)'));
     return;
   }
   const nameWidth = Math.min(
@@ -96,7 +96,7 @@ async function fetchPage(
   return await apiFetch<TracesResponse>(client, `/execution-traces?${params.toString()}`);
 }
 
-export interface WorkflowsRunsListOptions extends ListOptions {
+export interface WorkflowsExecutionsListOptions extends ListOptions {
   workflow?: string;
   by?: Lookup;
   status?: string;
@@ -107,8 +107,10 @@ export interface WorkflowsRunsListOptions extends ListOptions {
   json?: boolean;
 }
 
-export async function runWorkflowsRunsList(opts: WorkflowsRunsListOptions): Promise<void> {
-  const { client } = await openSession(opts, 'workflows runs list');
+export async function runWorkflowsExecutionsList(
+  opts: WorkflowsExecutionsListOptions,
+): Promise<void> {
+  const { client } = await openSession(opts, 'workflows executions list');
   const order = opts.order ?? 'startedAt:DESC';
   const baseParams = buildListParams({ ...opts, order, limit: undefined });
 
@@ -139,6 +141,6 @@ export async function runWorkflowsRunsList(opts: WorkflowsRunsListOptions): Prom
     console.log(JSON.stringify(rows, null, 2));
     return;
   }
-  console.error(colors.dim(`\n${rows.length} trace(s)\n`));
+  console.error(colors.dim(`\n${rows.length} execution(s)\n`));
   printTable(rows);
 }

@@ -1,8 +1,8 @@
 /**
- * `quickflo workflows runs replay <run-id>` — re-execute a workflow with the
- * same `initial` it had on the original run. Reads the stored trace, locates
- * the input under known fields (`metadata.initial`, root `initial`, or
- * `__input__` step output), then delegates to `runWorkflowsRun`.
+ * `quickflo workflows executions replay <id>` — re-execute a workflow with
+ * the same `initial` it had on the original execution. Reads the stored
+ * trace, locates the input under known fields (`metadata.initial`, root
+ * `initial`, or `__input__` step output), then delegates to `runWorkflowsRun`.
  *
  * If the input isn't where we expect, fails with a clear message asking the
  * user to pass `--input` / `--input-file` explicitly.
@@ -39,7 +39,7 @@ function locateInitial(trace: unknown): Record<string, unknown> | undefined {
   return undefined;
 }
 
-export interface WorkflowsRunsReplayOptions {
+export interface WorkflowsExecutionsReplayOptions {
   id: string;
   mode?: 'sync' | 'async';
   env?: string;
@@ -51,10 +51,10 @@ export interface WorkflowsRunsReplayOptions {
   json?: boolean;
 }
 
-export async function runWorkflowsRunsReplay(
-  opts: WorkflowsRunsReplayOptions,
+export async function runWorkflowsExecutionsReplay(
+  opts: WorkflowsExecutionsReplayOptions,
 ): Promise<void> {
-  const { client } = await openSession(opts, 'workflows runs replay');
+  const { client } = await openSession(opts, 'workflows executions replay');
   const trace = await apiFetch<ExecutionTrace>(client, `/execution-traces/${opts.id}`);
   let initial = locateInitial(trace);
 
@@ -68,12 +68,12 @@ export async function runWorkflowsRunsReplay(
 
   if (!initial) {
     throw new UserError(
-      `Could not locate the original \`initial\` input in trace ${opts.id}. ` +
+      `Could not locate the original \`initial\` input in execution ${opts.id}. ` +
         `Pass it explicitly via \`workflows run <wf> --input '{...}'\`.`,
     );
   }
   if (!trace.workflowId && !trace.workflowSuid && !trace.workflowName) {
-    throw new UserError(`Trace ${opts.id} has no associated workflow reference.`);
+    throw new UserError(`Execution ${opts.id} has no associated workflow reference.`);
   }
 
   const ref = trace.workflowSuid ?? trace.workflowId ?? trace.workflowName!;

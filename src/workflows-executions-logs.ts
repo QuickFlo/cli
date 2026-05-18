@@ -1,5 +1,5 @@
 /**
- * `quickflo workflows runs logs <run-id>` — fetch one step's output, or the
+ * `quickflo workflows executions logs <id>` — fetch one step's output, or the
  * full trace data when `--full` is set. Output is JSON to stdout for pipe
  * friendliness; `--show-secrets` passes through to the server.
  */
@@ -8,7 +8,7 @@ import { apiFetch } from './api.ts';
 import { openSession } from './session.ts';
 import { UserError } from './errors.ts';
 
-export interface WorkflowsRunsLogsOptions {
+export interface WorkflowsExecutionsLogsOptions {
   id: string;
   step?: string;
   stepPath?: string;
@@ -18,8 +18,10 @@ export interface WorkflowsRunsLogsOptions {
   orgId?: string;
 }
 
-export async function runWorkflowsRunsLogs(opts: WorkflowsRunsLogsOptions): Promise<void> {
-  const { client } = await openSession(opts, 'workflows runs logs');
+export async function runWorkflowsExecutionsLogs(
+  opts: WorkflowsExecutionsLogsOptions,
+): Promise<void> {
+  const { client } = await openSession(opts, 'workflows executions logs');
 
   if (opts.full) {
     const params = new URLSearchParams();

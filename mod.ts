@@ -75,11 +75,12 @@ import { runDataStoresExport } from './src/data-stores-export.ts';
 import { setQuiet } from './src/log.ts';
 import { printError } from './src/errors.ts';
 import { runWorkflowsRun } from './src/workflows-run.ts';
-import { runWorkflowsRunsList } from './src/workflows-runs-list.ts';
-import { runWorkflowsRunsGet } from './src/workflows-runs-get.ts';
-import { runWorkflowsRunsLogs } from './src/workflows-runs-logs.ts';
-import { runWorkflowsRunsDownload } from './src/workflows-runs-download.ts';
-import { runWorkflowsRunsReplay } from './src/workflows-runs-replay.ts';
+import { runWorkflowsExecutionsList } from './src/workflows-executions-list.ts';
+import { runWorkflowsExecutionsGet } from './src/workflows-executions-get.ts';
+import { runWorkflowsExecutionsLogs } from './src/workflows-executions-logs.ts';
+import { runWorkflowsExecutionsDownload } from './src/workflows-executions-download.ts';
+import { runWorkflowsExecutionsReplay } from './src/workflows-executions-replay.ts';
+import { runWorkflowsExecutionsTail } from './src/workflows-executions-tail.ts';
 import { runWorkflowsValidate } from './src/workflows-validate.ts';
 import { runWorkflowsStepsGet, runWorkflowsStepsList } from './src/workflows-steps.ts';
 import { runConnectionsTest } from './src/connections-test.ts';
@@ -433,6 +434,17 @@ const workflowsRun = new Command()
     collect: true,
   })
   .option('--timeout <seconds:number>', 'Client-side timeout (sync mode only).')
+  .option(
+    '--save-trace <path:string>',
+    'After a sync run completes, save the full trace JSON to this path.',
+  )
+  .option(
+    '--save-steps-to <dir:string>',
+    'After a sync run completes, write one JSON file per step output into this directory.',
+  )
+  .option('--show-secrets', 'Include secret values in saved trace / step output.', {
+    default: false,
+  })
   .option('-j, --json', 'Emit the raw API response instead of the human table.', { default: false })
   .example(
     'Run a workflow with input',
@@ -441,6 +453,10 @@ const workflowsRun = new Command()
   .example(
     'Run async (queue + executionId)',
     `quickflo workflows run my-wf --input '{}' --mode async -o abcd`,
+  )
+  .example(
+    'Run + persist trace and per-step outputs',
+    `quickflo workflows run my-wf --input '{}' --save-trace ./trace.json --save-steps-to ./steps/`,
   )
   .action(async (opts, ref) => {
     await runWorkflowsRun({
@@ -454,14 +470,17 @@ const workflowsRun = new Command()
       show: opts.show?.flatMap((s: string) => s.split(',')),
       hide: opts.hide?.flatMap((s: string) => s.split(',')),
       timeout: opts.timeout,
+      saveTrace: opts.saveTrace,
+      saveStepsTo: opts.saveStepsTo,
+      showSecrets: opts.showSecrets,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
       json: opts.json,
     });
   });
 
-const workflowsRunsList = new Command()
-  .description('List execution traces. Default order startedAt:DESC, limit 25.')
+const workflowsExecutionsList = new Command()
+  .description('List executions. Default order startedAt:DESC, limit 25.')
   .type('by', byType)
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
@@ -470,7 +489,7 @@ const workflowsRunsList = new Command()
   .option('--status <s:string>', 'Filter by status (running | success | failed | cancelled).')
   .option(
     '--since <duration:string>',
-    'Only traces started within the last <duration> (e.g. 30m, 2h, 1d).',
+    'Only executions started within the last <duration> (e.g. 30m, 2h, 1d).',
   )
   .option('--where <expr:string>', 'Repeatable <field>:<op>:<value> filter.', { collect: true })
   .option('--order <field:string>', 'Sort key (e.g. startedAt:DESC).')
@@ -478,7 +497,7 @@ const workflowsRunsList = new Command()
   .option('--all', 'Paginate through every page until empty.', { default: false })
   .option('-j, --json', 'Emit JSON instead of a table.', { default: false })
   .action(async (opts) => {
-    await runWorkflowsRunsList({
+    await runWorkflowsExecutionsList({
       workflow: opts.workflow,
       by: opts.by,
       status: opts.status,
@@ -493,14 +512,14 @@ const workflowsRunsList = new Command()
     });
   });
 
-const workflowsRunsGet = new Command()
-  .description('Show one execution trace with step paths.')
+const workflowsExecutionsGet = new Command()
+  .description('Show one execution with step paths.')
   .arguments('<id:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('-j, --json', 'Emit JSON instead of a human view.', { default: false })
   .action(async (opts, id) => {
-    await runWorkflowsRunsGet({
+    await runWorkflowsExecutionsGet({
       id,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
@@ -508,7 +527,7 @@ const workflowsRunsGet = new Command()
     });
   });
 
-const workflowsRunsLogs = new Command()
+const workflowsExecutionsLogs = new Command()
   .description('Fetch a single step output (or the full trace with --full).')
   .arguments('<id:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
@@ -518,7 +537,7 @@ const workflowsRunsLogs = new Command()
   .option('--full', 'Fetch the full trace data instead of one step.', { default: false })
   .option('--show-secrets', 'Include secret values in the output.', { default: false })
   .action(async (opts, id) => {
-    await runWorkflowsRunsLogs({
+    await runWorkflowsExecutionsLogs({
       id,
       step: opts.step,
       stepPath: opts.stepPath,
@@ -529,7 +548,7 @@ const workflowsRunsLogs = new Command()
     });
   });
 
-const workflowsRunsDownload = new Command()
+const workflowsExecutionsDownload = new Command()
   .description('Save the full trace JSON to a file.')
   .arguments('<id:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
@@ -537,7 +556,7 @@ const workflowsRunsDownload = new Command()
   .option('--out <path:string>', 'Output path (default: trace-<id>-<YYYYMMDD-HHmm>.json).')
   .option('--show-secrets', 'Include secret values in the output.', { default: false })
   .action(async (opts, id) => {
-    await runWorkflowsRunsDownload({
+    await runWorkflowsExecutionsDownload({
       id,
       out: opts.out,
       showSecrets: opts.showSecrets,
@@ -546,7 +565,7 @@ const workflowsRunsDownload = new Command()
     });
   });
 
-const workflowsRunsReplay = new Command()
+const workflowsExecutionsReplay = new Command()
   .description('Re-run a workflow with the same initial input as the original execution.')
   .type('runMode', runModeType)
   .arguments('<id:string>')
@@ -563,7 +582,7 @@ const workflowsRunsReplay = new Command()
   })
   .option('-j, --json', 'Emit JSON instead of a human view.', { default: false })
   .action(async (opts, id) => {
-    await runWorkflowsRunsReplay({
+    await runWorkflowsExecutionsReplay({
       id,
       mode: opts.mode,
       env: opts.env,
@@ -576,13 +595,51 @@ const workflowsRunsReplay = new Command()
     });
   });
 
-const workflowsRuns = new Command()
+const workflowsExecutionsTail = new Command()
+  .description(
+    'Poll an execution until it reaches a terminal state (success / failed / cancelled). ' +
+      'Optional --save-trace and --save-steps-to persist the trace on completion.',
+  )
+  .arguments('<id:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--interval <seconds:number>', 'Poll interval in seconds (default 2).')
+  .option('--timeout <seconds:number>', 'Client-side cutoff. Exits 124 if exceeded.')
+  .option('--save-trace <path:string>', 'On completion, save the full trace JSON to this path.')
+  .option(
+    '--save-steps-to <dir:string>',
+    'On completion, write one JSON file per step into this directory.',
+  )
+  .option('--show-secrets', 'Include secret values in saved trace / step output.', {
+    default: false,
+  })
+  .option(
+    '-j, --json',
+    'Emit one JSON line per poll, then the final trace JSON at the end.',
+    { default: false },
+  )
+  .action(async (opts, id) => {
+    await runWorkflowsExecutionsTail({
+      id,
+      interval: opts.interval,
+      timeout: opts.timeout,
+      saveTrace: opts.saveTrace,
+      saveStepsTo: opts.saveStepsTo,
+      showSecrets: opts.showSecrets,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const workflowsExecutions = new Command()
   .description('Inspect, tail, download, and replay workflow executions.')
-  .command('list', workflowsRunsList)
-  .command('get', workflowsRunsGet)
-  .command('logs', workflowsRunsLogs)
-  .command('download', workflowsRunsDownload)
-  .command('replay', workflowsRunsReplay);
+  .command('list', workflowsExecutionsList)
+  .command('get', workflowsExecutionsGet)
+  .command('logs', workflowsExecutionsLogs)
+  .command('download', workflowsExecutionsDownload)
+  .command('replay', workflowsExecutionsReplay)
+  .command('tail', workflowsExecutionsTail);
 
 const workflowsValidate = new Command()
   .description(
@@ -659,7 +716,7 @@ const workflows = new Command()
   .command('push', workflowsPush)
   .command('pull', workflowsPull)
   .command('run', workflowsRun)
-  .command('runs', workflowsRuns)
+  .command('executions', workflowsExecutions)
   .command('validate', workflowsValidate)
   .command('steps', workflowsSteps);
 

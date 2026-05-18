@@ -14,6 +14,7 @@ import { type Lookup } from './refs.ts';
 import { resolveWorkflowRef } from './workflow-refs.ts';
 import { openSession } from './session.ts';
 import { TimeoutError, UserError, ValidationError } from './errors.ts';
+import { saveSteps, saveTrace } from './trace-save.ts';
 
 interface WorkflowRecord {
   id: string;
@@ -180,6 +181,9 @@ export interface WorkflowsRunOptions {
   show?: string[];
   hide?: string[];
   timeout?: number;
+  saveTrace?: string;
+  saveStepsTo?: string;
+  showSecrets?: boolean;
   apiUrl?: string;
   orgId?: string;
   json?: boolean;
@@ -230,11 +234,17 @@ export async function runWorkflowsRun(opts: WorkflowsRunOptions): Promise<void> 
 
   if (mode === 'async') {
     const r = response as ExecuteAsyncResponse;
+    if (opts.saveTrace || opts.saveStepsTo) {
+      throw new UserError(
+        '--save-trace and --save-steps-to require --mode sync (async returns before the trace is finalized). ' +
+          'Use `quickflo workflows executions tail <id> --save-trace ...` after queueing.',
+      );
+    }
     if (opts.json) {
       console.log(JSON.stringify(r, null, 2));
     } else {
       console.error(colors.dim(`status: ${r.status}`));
-      console.error(colors.dim(`Tail with: quickflo workflows runs get ${r.executionId}`));
+      console.error(colors.dim(`Tail with: quickflo workflows executions tail ${r.executionId}`));
       console.log(r.executionId);
     }
     return;
@@ -249,6 +259,16 @@ export async function runWorkflowsRun(opts: WorkflowsRunOptions): Promise<void> 
       console.log('');
       console.log(colors.bold('output:'));
       console.log(JSON.stringify(r.output, null, 2));
+    }
+  }
+  if (r.executionId && (opts.saveTrace || opts.saveStepsTo)) {
+    if (opts.saveTrace) {
+      const path = await saveTrace(client, r.executionId, opts.saveTrace, opts.showSecrets);
+      console.error(colors.dim(`wrote trace → ${path}`));
+    }
+    if (opts.saveStepsTo) {
+      const paths = await saveSteps(client, r.executionId, opts.saveStepsTo, opts.showSecrets);
+      console.error(colors.dim(`wrote ${paths.length} step file(s) → ${opts.saveStepsTo}/`));
     }
   }
   if (!r.success) {

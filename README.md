@@ -385,28 +385,36 @@ quickflo workflows run my-wf --show fetchUsers,transform --input '{}'
 
 # CLI-side timeout (sync only). Exits 124 if exceeded.
 quickflo workflows run my-wf --input '{}' --timeout 30
+
+# Persist the trace + one JSON file per step to disk on completion (sync)
+quickflo workflows run my-wf --input '{}' \
+  --save-trace ./trace.json --save-steps-to ./steps/
 ```
 
-### Inspect execution traces
+### Inspect executions
 
 ```bash
 # Find recent failures
-quickflo workflows runs list --status failed --since 1h
+quickflo workflows executions list --status failed --since 1h
 
 # Full trace metadata + step paths
-quickflo workflows runs get <run-id>
+quickflo workflows executions get <execution-id>
 
 # One step's output
-quickflo workflows runs logs <run-id> --step fetchUsers
+quickflo workflows executions logs <execution-id> --step fetchUsers
 
 # Full trace data (and show secrets)
-quickflo workflows runs logs <run-id> --full --show-secrets
+quickflo workflows executions logs <execution-id> --full --show-secrets
 
 # Save the trace JSON to disk
-quickflo workflows runs download <run-id> --out ./trace.json
+quickflo workflows executions download <execution-id> --out ./trace.json
+
+# Tail a running execution until terminal; persist on completion
+quickflo workflows executions tail <execution-id> \
+  --save-trace ./trace.json --save-steps-to ./steps/
 
 # Re-run with the same initial input
-quickflo workflows runs replay <run-id>
+quickflo workflows executions replay <execution-id>
 ```
 
 ### Validate before pushing
@@ -448,9 +456,9 @@ The shape of the workflow that makes the CLI worth using from an agent:
 quickflo workflows validate ./patched.json -j || exit $?
 quickflo workflows push -d ./workflows -y
 quickflo workflows run my-wf --input "$INPUT" --timeout 60 \
-  || quickflo workflows runs list --status failed --since 5m -j \
+  || quickflo workflows executions list --status failed --since 5m -j \
        | jq -r '.[0].id' \
-       | xargs -I{} quickflo workflows runs logs {} --step "$FAILED_STEP"
+       | xargs -I{} quickflo workflows executions logs {} --step "$FAILED_STEP"
 ```
 
 ## Non-interactive contract
