@@ -10,7 +10,7 @@ import { type ApiClient, apiFetch } from './api.ts';
 import { buildListParams, type ListOptions } from './filters.ts';
 import { openSession } from './session.ts';
 import { resolveWorkflowRef } from './workflow-refs.ts';
-import { UserError } from './errors.ts';
+import { parseDuration } from './workflows-executions-shared.ts';
 import { type Lookup } from './refs.ts';
 
 interface TraceRow {
@@ -26,17 +26,6 @@ interface TraceRow {
 interface TracesResponse {
   data: TraceRow[];
   meta?: { total?: number };
-}
-
-const DURATION_RE = /^(\d+)\s*(s|m|h|d)$/i;
-
-function parseDuration(s: string): number {
-  const m = DURATION_RE.exec(s.trim());
-  if (!m) throw new UserError(`Invalid --since "${s}". Expected forms: 30s, 5m, 2h, 1d.`);
-  const n = Number(m[1]);
-  const unit = m[2].toLowerCase();
-  const mult = unit === 's' ? 1000 : unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000;
-  return n * mult;
 }
 
 function colorStatus(s: string): string {

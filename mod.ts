@@ -81,6 +81,9 @@ import { runWorkflowsExecutionsLogs } from './src/workflows-executions-logs.ts';
 import { runWorkflowsExecutionsDownload } from './src/workflows-executions-download.ts';
 import { runWorkflowsExecutionsReplay } from './src/workflows-executions-replay.ts';
 import { runWorkflowsExecutionsTail } from './src/workflows-executions-tail.ts';
+import { runWorkflowsExecutionsCancel } from './src/workflows-executions-cancel.ts';
+import { runWorkflowsExecutionsDelete } from './src/workflows-executions-delete.ts';
+import { runWorkflowsExecutionsRestore } from './src/workflows-executions-restore.ts';
 import { runWorkflowsValidate } from './src/workflows-validate.ts';
 import { runWorkflowsStepsGet, runWorkflowsStepsList } from './src/workflows-steps.ts';
 import { runConnectionsTest } from './src/connections-test.ts';
@@ -632,14 +635,127 @@ const workflowsExecutionsTail = new Command()
     });
   });
 
+const workflowsExecutionsCancel = new Command()
+  .description(
+    'Cancel one or more in-flight executions. Non-running rows are silently skipped — ' +
+      'the printed count is the server-honest "what actually transitioned".',
+  )
+  .type('by', byType)
+  .arguments('[...ids:string]')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--workflow <ref:string>', 'Filter mode: cancel all running in this workflow.')
+  .option('--by <kind:by>', 'Force --workflow lookup mode (id | suid | name).')
+  .option('--status <s:string>', 'Filter mode: status equality (typically `running`).')
+  .option('--since <duration:string>', 'Filter mode: started within last <duration> (30m, 2h, 1d).')
+  .option('--where <expr:string>', 'Filter mode: repeatable <field>:<op>:<value>.', {
+    collect: true,
+  })
+  .option('--limit <n:number>', 'Cap the number of matches resolved by filter mode.')
+  .option('--yes', 'Skip the confirmation prompt', { default: false })
+  .option('-j, --json', 'Emit JSON {cancelled, requested} instead of human output.', {
+    default: false,
+  })
+  .example('Cancel one', 'quickflo workflows executions cancel <id> -o abcd')
+  .example('Cancel many', 'quickflo workflows executions cancel <id1> <id2> <id3> -o abcd')
+  .example(
+    'Cancel all running for a workflow',
+    'quickflo workflows executions cancel --workflow my-wf --status running -o abcd',
+  )
+  .action(async (opts, ...ids) => {
+    await runWorkflowsExecutionsCancel({
+      ids,
+      workflow: opts.workflow,
+      by: opts.by,
+      status: opts.status,
+      since: opts.since,
+      where: opts.where,
+      limit: opts.limit,
+      yes: opts.yes,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const workflowsExecutionsDelete = new Command()
+  .description(
+    'Delete one or more execution traces. Running rows are auto-cancelled by the server ' +
+      'as part of delete — no need to cancel first. Restorable within the retention window via `restore`.',
+  )
+  .type('by', byType)
+  .arguments('[...ids:string]')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('--workflow <ref:string>', 'Filter mode: scope to one workflow.')
+  .option('--by <kind:by>', 'Force --workflow lookup mode (id | suid | name).')
+  .option('--status <s:string>', 'Filter mode: status equality.')
+  .option(
+    '--since <duration:string>',
+    'Filter mode: only executions started within the last <duration>.',
+  )
+  .option('--where <expr:string>', 'Filter mode: repeatable <field>:<op>:<value>.', {
+    collect: true,
+  })
+  .option('--limit <n:number>', 'Cap the number of matches resolved by filter mode.')
+  .option('--yes', 'Skip the confirmation prompt', { default: false })
+  .option('-j, --json', 'Emit JSON {archived, requested} instead of human output.', {
+    default: false,
+  })
+  .example('Delete one', 'quickflo workflows executions delete <id> -o abcd')
+  .example('Delete many', 'quickflo workflows executions delete <id1> <id2> -o abcd')
+  .example(
+    'Delete all failed in the last day',
+    'quickflo workflows executions delete --status failed --since 1d -o abcd',
+  )
+  .action(async (opts, ...ids) => {
+    await runWorkflowsExecutionsDelete({
+      ids,
+      workflow: opts.workflow,
+      by: opts.by,
+      status: opts.status,
+      since: opts.since,
+      where: opts.where,
+      limit: opts.limit,
+      yes: opts.yes,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const workflowsExecutionsRestore = new Command()
+  .description(
+    'Restore previously deleted executions. Only effective while the row is still in the ' +
+      'soft-archive window — past EXECUTION_TRACE_RETENTION_DAYS the IDs are hard-deleted and the count returns 0.',
+  )
+  .arguments('<...ids:string>')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-j, --json', 'Emit JSON {unarchived, requested} instead of human output.', {
+    default: false,
+  })
+  .example('Restore', 'quickflo workflows executions restore <id1> <id2> -o abcd')
+  .action(async (opts, ...ids) => {
+    await runWorkflowsExecutionsRestore({
+      ids,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
 const workflowsExecutions = new Command()
-  .description('Inspect, tail, download, and replay workflow executions.')
+  .description('Inspect, tail, download, replay, cancel, and delete workflow executions.')
   .command('list', workflowsExecutionsList)
   .command('get', workflowsExecutionsGet)
   .command('logs', workflowsExecutionsLogs)
   .command('download', workflowsExecutionsDownload)
   .command('replay', workflowsExecutionsReplay)
-  .command('tail', workflowsExecutionsTail);
+  .command('tail', workflowsExecutionsTail)
+  .command('cancel', workflowsExecutionsCancel)
+  .command('delete', workflowsExecutionsDelete)
+  .command('restore', workflowsExecutionsRestore);
 
 const workflowsValidate = new Command()
   .description(
