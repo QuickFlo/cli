@@ -28,6 +28,8 @@ import { runPackagesListVersions } from './src/packages-versions.ts';
 import { runPackagesUninstall } from './src/packages-uninstall.ts';
 import { runPackagesUpgrade } from './src/packages-upgrade.ts';
 import { runPackagesInit } from './src/packages-init.ts';
+import { runMicroappNew } from './src/microapp-new.ts';
+import { runMicroappStripeSync } from './src/microapp-stripe-sync.ts';
 import { runConnectionsList } from './src/connections-list.ts';
 import { runConnectionsGet } from './src/connections-get.ts';
 import { runConnectionsPull } from './src/connections-pull.ts';
@@ -1213,6 +1215,59 @@ const packages = new Command()
   .command('publish', packagesPublish)
   .command('init', packagesInit);
 
+// ─── Micro-apps ──────────────────────────────────────────────────────────────
+
+const microappNew = new Command()
+  .description(
+    'Scaffold a Vite + TS micro-app pre-wired to @quickflo/app-sdk (auth + onboarding + entitlement + triggers).',
+  )
+  .arguments('<name:string>')
+  .option('--dir <path:string>', 'Parent directory to create the app in', { default: '.' })
+  .option('--app-id <sku:string>', 'App SKU bound into the SDK (defaults to <name>)')
+  .option('--auth <mode:string>', 'Identity wiring: supabase | none', { default: 'supabase' })
+  .option('--framework <kind:string>', 'Project framework (only vite-ts for now)', {
+    default: 'vite-ts',
+  })
+  .example('Default (Supabase identity)', 'quickflo microapp new my-app')
+  .example('Custom SKU', 'quickflo microapp new my-app --app-id acme-portal')
+  .example('Embedded / non-Supabase', 'quickflo microapp new my-app --auth none')
+  .action(async (opts, name) => {
+    await runMicroappNew({
+      name,
+      dir: opts.dir,
+      appId: opts.appId,
+      auth: opts.auth,
+      framework: opts.framework,
+    });
+  });
+
+const microappStripeSync = new Command()
+  .description(
+    'Provision a micro-app Stripe product + prices from stripe.config.json (idempotent), writing the ids back into stripe.ids.json + the apps.config snippet.',
+  )
+  .arguments('[config:string]')
+  .option('--key <sk:string>', 'Stripe secret key (or set STRIPE_API_KEY / STRIPE_SECRET_KEY)')
+  .option('--live', 'Target Stripe live mode (required with an sk_live key)', { default: false })
+  .option('--yes', 'Skip the live-mode confirmation prompt (for CI)', { default: false })
+  .option('--dry-run', 'Print the intended objects without calling Stripe', { default: false })
+  .example('Test mode', 'STRIPE_API_KEY=sk_test_… quickflo microapp stripe-sync')
+  .example('Dry run', 'quickflo microapp stripe-sync --dry-run')
+  .example('Live mode', 'quickflo microapp stripe-sync --key sk_live_… --live')
+  .action(async (opts, config) => {
+    await runMicroappStripeSync({
+      config,
+      key: opts.key,
+      live: opts.live,
+      yes: opts.yes,
+      dryRun: opts.dryRun,
+    });
+  });
+
+const microapp = new Command()
+  .description('Scaffold QuickFlo micro-apps (custom UIs on QuickFlo auth + backend).')
+  .command('new', microappNew)
+  .command('stripe-sync', microappStripeSync);
+
 // ─── Connections ─────────────────────────────────────────────────────────────
 
 const connectionsList = new Command()
@@ -2070,6 +2125,7 @@ try {
     .command('auth', auth)
     .command('workflows', workflows)
     .command('packages', packages)
+    .command('microapp', microapp)
     .command('connections', connections)
     .command('environments', environments)
     .command('triggers', triggers)
