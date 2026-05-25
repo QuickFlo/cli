@@ -129,6 +129,40 @@ export function injectProductId(snippet: string, productId: string): string {
   );
 }
 
+const ENV_BLOCK_START = '# --- quickflo:stripe (managed by `quickflo microapp stripe-sync`) ---';
+const ENV_BLOCK_END = '# --- end quickflo:stripe ---';
+
+/** Env var name for a price, e.g. (pro, month) -> `VITE_QF_PRICE_PRO_MONTH`. */
+export function priceEnvVar(tier: string, interval: string): string {
+  const norm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  return `VITE_QF_PRICE_${norm(tier)}_${norm(interval)}`;
+}
+
+/**
+ * Upsert a managed block of `VITE_QF_PRICE_*=<priceId>` lines into a `.env`.
+ * The block is delimited by markers and rewritten wholesale each run, so it's
+ * idempotent and never disturbs the user's own env lines. Price IDs are not
+ * secret (they're used client-side in Stripe.js), so living in `.env` is fine.
+ */
+export function upsertEnvPrices(envContent: string, prices: ResolvedPrice[]): string {
+  const block = [
+    ENV_BLOCK_START,
+    ...prices.map((p) => `${priceEnvVar(p.tier, p.interval)}=${p.priceId}`),
+    ENV_BLOCK_END,
+  ].join('\n');
+
+  const start = envContent.indexOf(ENV_BLOCK_START);
+  if (start === -1) {
+    const sep = envContent.length === 0 ? '' : envContent.endsWith('\n') ? '\n' : '\n\n';
+    return `${envContent}${sep}${block}\n`;
+  }
+  const end = envContent.indexOf(ENV_BLOCK_END, start);
+  if (end === -1) {
+    return envContent.slice(0, start) + block + '\n';
+  }
+  return envContent.slice(0, start) + block + envContent.slice(end + ENV_BLOCK_END.length);
+}
+
 function parseConfig(raw: string): StripeConfig {
   let parsed: unknown;
   try {
@@ -333,12 +367,22 @@ async function readCachedIds(path: string): Promise<StripeIds | undefined> {
 
 async function writeBack(dir: string, ids: StripeIds): Promise<void> {
   await Deno.writeTextFile(join(dir, 'stripe.ids.json'), JSON.stringify(ids, null, 2) + '\n');
+
   const snippetPath = join(dir, 'apps.config.snippet.md');
   try {
     const snippet = await Deno.readTextFile(snippetPath);
     await Deno.writeTextFile(snippetPath, injectProductId(snippet, ids.productId));
   } catch {
     // No snippet alongside the config — nothing to patch.
+  }
+
+  // Make price ids available to the front-end (checkout) via VITE_ env vars.
+  const envPath = join(dir, '.env');
+  try {
+    const env = await Deno.readTextFile(envPath);
+    await Deno.writeTextFile(envPath, upsertEnvPrices(env, ids.prices));
+  } catch {
+    // No .env alongside the config — skip (don't create a bare one).
   }
 }
 
@@ -461,5 +505,9 @@ export async function runMicroappStripeSync(opts: MicroappStripeSyncOptions): Pr
     info(`  price ${colors.bold(`${price.tier}/${price.interval}`)} ${colors.dim(price.priceId)}`);
   }
   info('');
-  info(colors.dim('Wrote stripe.ids.json and patched stripeProductIds in apps.config.snippet.md.'));
+  info(
+    colors.dim(
+      'Wrote stripe.ids.json, patched stripeProductIds in apps.config.snippet.md, and set VITE_QF_PRICE_* in .env.',
+    ),
+  );
 }

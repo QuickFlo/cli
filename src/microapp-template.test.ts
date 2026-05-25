@@ -48,6 +48,19 @@ Deno.test('buildTemplate emits a paste-ready apps.config snippet', () => {
   assertStringIncludes(snippet, 'stripeProductIds: [],');
 });
 
+Deno.test('buildTemplate emits a SETUP.md checklist with real steps', () => {
+  const supa = buildTemplate({ name: 'my-app', appId: 'my-app', authMode: 'supabase' });
+  assert('SETUP.md' in supa, 'expected SETUP.md');
+  assertStringIncludes(supa['SETUP.md'], 'Setup checklist — my-app');
+  assertStringIncludes(supa['SETUP.md'], '- [ ]');
+  assertStringIncludes(supa['SETUP.md'], 'stripe-sync');
+  // Identity step is mode-specific.
+  assertStringIncludes(supa['SETUP.md'], 'QuickFlo** Supabase project');
+
+  const none = buildTemplate({ name: 'embedded', appId: 'embedded', authMode: 'none' });
+  assertStringIncludes(none['SETUP.md'], 'Wire `getAuthToken`');
+});
+
 Deno.test('buildTemplate emits a valid stripe.config.json', () => {
   const files = buildTemplate({ name: 'acme-portal', appId: 'acme-portal', authMode: 'supabase' });
   const cfg = JSON.parse(files['stripe.config.json']);
