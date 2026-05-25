@@ -274,29 +274,64 @@ async function showSignedIn(): Promise<void> {
   wireSignOut();
 }
 
-function showSignIn(): void {
+// Sign-in is a one-time email CODE flow (not a magic-link redirect): the code
+// is origin-independent, so it works on any micro-app domain with no Supabase
+// redirect-URL allow-listing. Step 1 emails the code; step 2 verifies it.
+function showEmailStep(): void {
   render(
     '<h1>${opts.name}</h1>' +
-      '<p class="muted">Magic-link sign-in via the shared QuickFlo Supabase project.</p>' +
-      '<form id="signin">' +
+      '<p class="muted">Sign in with a one-time code sent to your email.</p>' +
+      '<form id="email-form">' +
       '<input id="email" type="email" placeholder="you@example.com" required />' +
-      '<button type="submit">Send magic link</button>' +
+      '<button type="submit">Email me a code</button>' +
       '</form>' +
       '<p id="status" class="muted"></p>',
   );
-  const form = document.querySelector('#signin');
+  const form = document.querySelector('#email-form');
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const input = document.querySelector('#email');
     const status = document.querySelector('#status');
-    const email = input instanceof HTMLInputElement ? input.value : '';
+    const email = input instanceof HTMLInputElement ? input.value.trim() : '';
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.origin },
+      options: { shouldCreateUser: true },
     });
-    if (status) {
-      status.textContent = error ? error.message : 'Check your email for the sign-in link.';
+    if (error) {
+      if (status) {
+        status.textContent = error.message;
+      }
+      return;
     }
+    showCodeStep(email);
+  });
+}
+
+function showCodeStep(email: string): void {
+  render(
+    '<h1>${opts.name}</h1>' +
+      '<p class="muted">Enter the 6-digit code sent to <strong>' + email + '</strong>.</p>' +
+      '<form id="code-form">' +
+      '<input id="code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" required />' +
+      '<button type="submit">Verify</button>' +
+      '</form>' +
+      '<p id="status" class="muted"></p>',
+  );
+  const form = document.querySelector('#code-form');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const input = document.querySelector('#code');
+    const status = document.querySelector('#status');
+    const token = input instanceof HTMLInputElement ? input.value.trim() : '';
+    const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+    if (error) {
+      if (status) {
+        status.textContent = error.message;
+      }
+      return;
+    }
+    // Session established — onAuthStateChange also fires; render now.
+    await showSignedIn();
   });
 }
 
@@ -305,12 +340,10 @@ async function boot(): Promise<void> {
   if (data.session) {
     await showSignedIn();
   } else {
-    showSignIn();
+    showEmailStep();
   }
 }
 
-// Magic-link redirects land back here; Supabase parses the URL hash and fires
-// SIGNED_IN once the session is established.
 supabase.auth.onAuthStateChange((_event, session) => {
   if (session) {
     void showSignedIn();
@@ -364,13 +397,22 @@ void boot();
 
 function styleCss(): string {
   return `:root {
-  color-scheme: light dark;
+  color-scheme: light;
+  --bg: #ffffff;
+  --fg: #18181b;
+  --muted: #71717a;
+  --border: #e4e4e7;
+  --accent: #2563eb;
+  --accent-fg: #ffffff;
+  --error: #dc2626;
   font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
   line-height: 1.5;
 }
 
 body {
   margin: 0;
+  background: var(--bg);
+  color: var(--fg);
   display: grid;
   place-items: center;
   min-height: 100vh;
@@ -387,12 +429,12 @@ h1 {
 }
 
 .muted {
-  opacity: 0.65;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
 .error {
-  color: #d23;
+  color: var(--error);
 }
 
 dl {
@@ -404,7 +446,7 @@ dl {
 
 dt {
   font-weight: 600;
-  opacity: 0.7;
+  color: var(--muted);
 }
 
 dd {
@@ -416,11 +458,41 @@ code {
   font-size: 0.85em;
 }
 
+form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+}
+
 input,
 button {
   font: inherit;
   padding: 0.5rem 0.75rem;
-  margin-right: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+input {
+  flex: 1;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+button {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1d4ed8;
 }
 `;
 }
@@ -517,8 +589,16 @@ VITE_SUPABASE_ANON_KEY=   # the QuickFlo Supabase anon key
 \`\`\`
 
 \`src/quickflo.ts\` wires the SDK's \`getAuthToken\` resolver to the Supabase
-session access token. \`src/main.ts\` demonstrates the full loop: magic-link
-sign-in, \`ensureOnboarded()\`, and an entitlement readout.`
+session access token. \`src/main.ts\` demonstrates the full loop: one-time-code
+sign-in (\`signInWithOtp\` → \`verifyOtp\`), \`ensureOnboarded()\`, and an
+entitlement readout.
+
+> **Why a code, not a magic link?** The shared QuickFlo Supabase email carries
+> both, but the magic link only redirects to URLs allow-listed in the QF
+> project (e.g. quickflo.app) — your micro-app's domain isn't, so the link
+> won't return here. The 6-digit code is origin-independent and needs no
+> Supabase config. To use magic links instead, add your app's domain to the QF
+> project's Redirect URLs and switch \`src/main.ts\` to \`emailRedirectTo\`.`
     : `## Identity: bring your own (\`--auth none\`)
 
 This app was scaffolded without Supabase wiring. \`src/quickflo.ts\` leaves
