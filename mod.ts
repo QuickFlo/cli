@@ -1246,16 +1246,18 @@ const microappStripeSync = new Command()
     'Provision a micro-app Stripe product + prices from stripe.config.json (idempotent), writing the ids back into stripe.ids.json + the apps.config snippet.',
   )
   .arguments('[config:string]')
+  .option('--config <path:string>', 'Path to stripe.config.json (default ./stripe.config.json)')
   .option('--key <sk:string>', 'Stripe secret key (or set STRIPE_API_KEY / STRIPE_SECRET_KEY)')
   .option('--live', 'Target Stripe live mode (required with an sk_live key)', { default: false })
   .option('--yes', 'Skip the live-mode confirmation prompt (for CI)', { default: false })
   .option('--dry-run', 'Print the intended objects without calling Stripe', { default: false })
   .example('Test mode', 'STRIPE_API_KEY=sk_test_… quickflo microapp stripe-sync')
+  .example('Custom path', 'quickflo microapp stripe-sync --config ./config/stripe.config.json')
   .example('Dry run', 'quickflo microapp stripe-sync --dry-run')
   .example('Live mode', 'quickflo microapp stripe-sync --key sk_live_… --live')
   .action(async (opts, config) => {
     await runMicroappStripeSync({
-      config,
+      config: opts.config ?? config,
       key: opts.key,
       live: opts.live,
       yes: opts.yes,
