@@ -29,7 +29,7 @@ export interface TemplateOptions {
 }
 
 // Pinned to the currently-published majors. Bump when the SDK ships a new line.
-const SDK_VERSION = '^0.5.0';
+const SDK_VERSION = '^0.6.0';
 const ENTITLEMENT_SCHEMA_VERSION = '^0.5.0';
 const SUPABASE_VERSION = '^2.45.0';
 const VITE_VERSION = '^5.4.0';
@@ -671,7 +671,7 @@ The \`qf\` client in \`src/quickflo.ts\` exposes:
 - \`qf.ensureOnboarded()\` — provision/lookup the user's org + entitlement (cached).
 - \`qf.requireActiveEntitlement()\` — page guard; fires \`onUnauthenticated\` / \`onPaywall\`.
 - \`qf.getCachedOnboarding()\` / \`qf.getCachedEntitlement()\` — sync cache reads.
-- \`qf.webhooks.run(orgSuid, name, body, opts?)\` — call a webhook-triggered workflow.
+- \`qf.webhooks.run(name, body, opts?)\` — call a webhook-triggered workflow (orgSuid auto-fills from onboarding).
 - \`qf.forms.*\` — the full form lifecycle: \`getFormSchema\`, \`getFormPrefill\`,
   \`uploadFormFile\`, \`getFormConfirmation\`, \`submitForm\`, plus credentials/OTP/magic-link
   auth for external-user forms.
