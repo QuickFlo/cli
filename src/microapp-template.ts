@@ -520,6 +520,17 @@ function stripeConfig(opts: TemplateOptions): string {
         ],
       },
     ],
+    // One-time (pay-per-use) purchases. Created as Stripe one-time prices
+    // (checkout in `payment` mode); `grants.credits` become a consumable
+    // balance the central billing webhook adds to the org's entitlement.
+    oneTime: [
+      {
+        sku: 'single-use',
+        name: 'Single use',
+        amount: 1900,
+        grants: { credits: { runs: 1 }, expiresInDays: 90 },
+      },
+    ],
   };
   return JSON.stringify(cfg, null, 2) + '\n';
 }
