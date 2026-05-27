@@ -141,10 +141,11 @@ const SERVER_MANAGED_FIELDS = new Set([
 /**
  * Top-level fields that belong INSIDE `definition` server-side. The CLI
  * file shape flattens them for ergonomics (`environment`, `initial`,
- * `steps` live at the top level when authored), so the push payload
- * needs to nest them back.
+ * `steps`, `options` live at the top level when authored), so the push
+ * payload needs to nest them back. `options` carries executionMode,
+ * stopOnError, timeoutMilliseconds, and workerTier.
  */
-const DEFINITION_FIELDS = new Set(['environment', 'initial', 'steps']);
+const DEFINITION_FIELDS = new Set(['environment', 'initial', 'steps', 'options']);
 
 // The `environment` field lives INSIDE `definition`, not at the top level —
 // see workflow-template.service.ts: `template.definition.environment`.
@@ -154,6 +155,7 @@ function buildDefinition(def: WorkflowDefinition): Record<string, unknown> {
   };
   if (def['initial'] !== undefined) definition['initial'] = def['initial'];
   if (def['environment']) definition['environment'] = def['environment'];
+  if (def['options'] !== undefined) definition['options'] = def['options'];
   return definition;
 }
 
