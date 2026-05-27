@@ -127,9 +127,9 @@ function buildFileShape(wf: RemoteWorkflow): Record<string, unknown> {
   const definition = (wf['definition'] ?? {}) as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   // Pass through every top-level field except server-managed ones.
-  // `definition` is unwrapped below (its `steps`/`initial`/`environment`
-  // are surfaced at the top level so the file shape matches what
-  // workflows-push expects to read).
+  // `definition` is unwrapped below (its `steps`/`initial`/`environment`/
+  // `options` are surfaced at the top level so the file shape matches
+  // what workflows-push expects to read).
   for (const [key, value] of Object.entries(wf)) {
     if (SERVER_MANAGED_FIELDS.has(key)) continue;
     if (key === 'definition') continue;
@@ -139,6 +139,9 @@ function buildFileShape(wf: RemoteWorkflow): Record<string, unknown> {
   // Unwrap the definition's user-authored fields onto the top level.
   if (definition['environment']) out['environment'] = definition['environment'];
   if (definition['initial'] !== undefined) out['initial'] = definition['initial'];
+  // `options` carries executionMode, stopOnError, timeoutMilliseconds, and
+  // workerTier — surface the whole object so all of them round-trip.
+  if (definition['options'] !== undefined) out['options'] = definition['options'];
   out['steps'] = definition['steps'] ?? [];
   return out;
 }
