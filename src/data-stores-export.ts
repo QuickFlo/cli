@@ -14,16 +14,23 @@ interface EntriesListResult {
   total: number;
 }
 
-async function fetchAllEntries(
+/**
+ * Paginate through a table's entries. `limit` caps how many are fetched
+ * (default: unlimited) — callers like `backup` pass a cap so a giant table
+ * can't blow up a snapshot, and detect truncation by checking whether the
+ * returned count equals the cap.
+ */
+export async function fetchAllEntries(
   client: ApiClient,
   tableName: string,
+  limit = Infinity,
 ): Promise<DataStoreEntry[]> {
-  const pageSize = 500;
+  const pageSize = Math.min(500, limit);
   let offset = 0;
   const all: DataStoreEntry[] = [];
-  while (true) {
+  while (all.length < limit) {
     const params = new URLSearchParams();
-    params.set('limit', String(pageSize));
+    params.set('limit', String(Math.min(pageSize, limit - all.length)));
     params.set('offset', String(offset));
     params.set('sortBy', 'key');
     params.set('sortDirection', 'asc');
@@ -36,7 +43,7 @@ async function fetchAllEntries(
     if (page.length < pageSize) break;
     offset += pageSize;
   }
-  return all;
+  return all.length > limit ? all.slice(0, limit) : all;
 }
 
 export interface DataStoresExportOptions {

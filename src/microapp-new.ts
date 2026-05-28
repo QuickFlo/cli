@@ -27,6 +27,8 @@ export interface MicroappNewOptions {
   auth?: string;
   /** Project framework. Only `vite-ts` for now. */
   framework?: string;
+  /** Emit anonymous free-demo helpers (Supabase only). */
+  freeTier?: boolean;
 }
 
 function validateName(name: string): void {
@@ -83,6 +85,12 @@ export async function runMicroappNew(opts: MicroappNewOptions): Promise<void> {
   validateFramework(opts.framework);
   const authMode = resolveAuthMode(opts.auth);
   const appId = opts.appId ?? opts.name;
+  const freeTier = opts.freeTier ?? false;
+  if (freeTier && authMode !== 'supabase') {
+    throw new ValidationError(
+      '--free-tier needs Supabase identity (anonymous sign-ins are a Supabase feature). Drop --auth none, or drop --free-tier.',
+    );
+  }
 
   const parent = resolve(opts.dir ?? '.');
   const target = join(parent, opts.name);
@@ -91,7 +99,7 @@ export async function runMicroappNew(opts: MicroappNewOptions): Promise<void> {
     throw new UserError(`${target} already exists and is not empty — refusing to overwrite.`);
   }
 
-  const files = buildTemplate({ name: opts.name, appId, authMode });
+  const files = buildTemplate({ name: opts.name, appId, authMode, freeTier });
 
   for (const [rel, contents] of Object.entries(files)) {
     const path = join(target, rel);
@@ -102,7 +110,9 @@ export async function runMicroappNew(opts: MicroappNewOptions): Promise<void> {
   const fileCount = Object.keys(files).length;
   info(
     `${colors.green('✓')} scaffolded ${colors.bold(opts.name)} ` +
-      colors.dim(`(${fileCount} files, auth: ${authMode}, app id: ${appId})`),
+      colors.dim(
+        `(${fileCount} files, auth: ${authMode}, app id: ${appId}${freeTier ? ', free-tier' : ''})`,
+      ),
   );
   info('');
   info(colors.dim('Next:'));

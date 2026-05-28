@@ -15,7 +15,7 @@ interface TablesListResult {
   total: number;
 }
 
-async function fetchTables(
+export async function fetchTables(
   client: ApiClient,
   opts: { all: boolean; limit?: number },
 ): Promise<TablesListResult['data']> {

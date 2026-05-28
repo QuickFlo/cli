@@ -26,10 +26,17 @@ export interface TemplateOptions {
   appId: string;
   /** Identity wiring. */
   authMode: MicroappAuthMode;
+  /**
+   * Emit anonymous free-demo helpers (`ensureAnonSession` / `isAnonSession` /
+   * `platformOpts`) into the Supabase client. Supabase-only; ignored for
+   * `authMode: 'none'`.
+   */
+  freeTier: boolean;
 }
 
 // Pinned to the currently-published majors. Bump when the SDK ships a new line.
-const SDK_VERSION = '^0.6.0';
+// 0.7 adds the `qf.billing` namespace + `unwrap` + `platformOrgSuid` config.
+const SDK_VERSION = '^0.7.0';
 const ENTITLEMENT_SCHEMA_VERSION = '^0.5.0';
 const SUPABASE_VERSION = '^2.45.0';
 const VITE_VERSION = '^5.4.0';
@@ -119,6 +126,10 @@ VITE_SUPABASE_ANON_KEY=
 # Must match an entry in apps.config.ts in the workflows repo.
 VITE_QF_APP_ID=${opts.appId}
 
+# Org hosting the centralized platform billing workflows (qf.billing.*).
+# Leave as 'platform' unless you're pointing at a dev/staging platform org.
+# VITE_QF_PLATFORM_ORG_SUID=platform
+
 # Optional host overrides (defaults: go.quickflo.app / run.quickflo.app)
 # VITE_QF_API_BASE_URL=
 # VITE_QF_TRIGGERS_BASE_URL=
@@ -133,6 +144,10 @@ VITE_QF_APP_ID=${opts.appId}
 # The app SKU this micro-app installs into and checks entitlement against.
 # Must match an entry in apps.config.ts in the workflows repo.
 VITE_QF_APP_ID=${opts.appId}
+
+# Org hosting the centralized platform billing workflows (qf.billing.*).
+# Leave as 'platform' unless you're pointing at a dev/staging platform org.
+# VITE_QF_PLATFORM_ORG_SUID=platform
 
 # Optional host overrides (defaults: go.quickflo.app / run.quickflo.app)
 # VITE_QF_API_BASE_URL=
@@ -173,15 +188,68 @@ export const supabase = createClient(url, anonKey);
 }
 
 function quickfloClientSupabase(opts: TemplateOptions): string {
+  const freeTierImports = opts.freeTier
+    ? `import type { Session } from '@supabase/supabase-js';\n`
+    : '';
+  const freeTierHelpers = opts.freeTier
+    ? `
+/**
+ * True when there is no session, or the session is an anonymous Supabase user.
+ * The free-demo path runs on the platform org with an anonymous JWT; a real
+ * (onboarded) session auto-resolves the user's own org.
+ */
+export function isAnonSession(session: Session | null): boolean {
+  return !session || session.user?.is_anonymous === true;
+}
+
+/**
+ * Webhook/form call options for the free-demo workflow: target the platform
+ * org explicitly while anonymous, otherwise let the SDK auto-resolve the
+ * signed-in user's own org from cached onboarding.
+ */
+export function platformOpts(
+  session: Session | null,
+): { orgSuid: string } | Record<string, never> {
+  return isAnonSession(session) ? { orgSuid: PLATFORM_ORG_SUID } : {};
+}
+
+/**
+ * Ensure a usable QuickFlo identity token exists for the free-demo path. If
+ * the visitor has no session, sign them in anonymously (a real, email-less
+ * JWT). No-op when a session (anon or real) already exists.
+ *
+ * Requires "Allow anonymous sign-ins" enabled in the QF Supabase project
+ * (Auth → Providers). Billing/checkout is NOT available anonymously — it
+ * requires an onboarded org; the anon path is for the free demo only.
+ */
+export async function ensureAnonSession(): Promise<Session | null> {
+  const { data } = await supabase.auth.getSession();
+  if (data.session) {
+    return data.session;
+  }
+  const { data: signedIn, error } = await supabase.auth.signInAnonymously();
+  if (error) {
+    throw new Error(\`Anonymous sign-in failed: \${error.message}\`);
+  }
+  return signedIn.session;
+}
+`
+    : '';
   return `import { createQuickFloClient } from '@quickflo/app-sdk';
-import { supabase } from './supabase';
+${freeTierImports}import { supabase } from './supabase';
 
 const appId = import.meta.env.VITE_QF_APP_ID ?? '${opts.appId}';
+
+// The shared platform org that hosts centralized Stripe billing (and any free
+// demo workflows). \`qf.billing.*\` routes here automatically.
+export const PLATFORM_ORG_SUID =
+  import.meta.env.VITE_QF_PLATFORM_ORG_SUID ?? 'platform';
 
 // The SDK is bring-your-own-JWT. In the shared-Supabase path the QuickFlo
 // identity token IS the Supabase session access token.
 export const qf = createQuickFloClient({
   appId,
+  platformOrgSuid: PLATFORM_ORG_SUID,
   getAuthToken: async () => {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token ?? null;
@@ -195,7 +263,7 @@ export const qf = createQuickFloClient({
     console.warn('[quickflo] entitlement inactive:', entitlement.status);
   },
 });
-`;
+${freeTierHelpers}`;
 }
 
 function quickfloClientNone(opts: TemplateOptions): string {
@@ -203,8 +271,14 @@ function quickfloClientNone(opts: TemplateOptions): string {
 
 const appId = import.meta.env.VITE_QF_APP_ID ?? '${opts.appId}';
 
+// The shared platform org that hosts centralized Stripe billing.
+// \`qf.billing.*\` routes here automatically.
+export const PLATFORM_ORG_SUID =
+  import.meta.env.VITE_QF_PLATFORM_ORG_SUID ?? 'platform';
+
 export const qf = createQuickFloClient({
   appId,
+  platformOrgSuid: PLATFORM_ORG_SUID,
   // TODO: return the current QuickFlo identity JWT, or null when signed out.
   // Embedded hosts (e.g. a Zoom app) resolve their own token here.
   // NOTE: non-Supabase identity is NOT portable to quickflo.app — see README.
@@ -621,6 +695,26 @@ signed in through a custom provider here will not automatically resolve to a
 QuickFlo org at quickflo.app. Use the default (Supabase) mode if portability
 matters.`;
 
+  const freeTierSection = opts.freeTier
+    ? `
+
+## Free demo (anonymous sessions)
+
+Scaffolded with \`--free-tier\`. \`src/quickflo.ts\` exports
+\`ensureAnonSession()\` / \`isAnonSession(session)\` / \`platformOpts(session)\` so a
+visitor can try a free demo workflow **before** signing up: sign them in
+anonymously (a real, email-less Supabase JWT), then call the demo workflow on
+the platform org via \`qf.webhooks.run(name, body, platformOpts(session))\`. A
+real (onboarded) session auto-resolves the user's own org instead.
+
+> **Precondition:** enable **Allow anonymous sign-ins** in the QuickFlo Supabase
+> project (Auth → Providers). Without it, \`ensureAnonSession()\` fails.
+
+Billing is **not** available anonymously — \`qf.billing.*\` requires an onboarded
+org. The anon path is for the free demo only; converting to paid runs through
+the normal sign-in → onboarding → checkout flow.`
+    : '';
+
   return `# ${opts.name}
 
 A QuickFlo micro-app: a custom UI on top of QuickFlo auth + backend, scaffolded
@@ -635,7 +729,7 @@ pnpm typecheck   # tsc --noEmit
 pnpm build       # tsc + vite build
 \`\`\`
 
-${authSection}
+${authSection}${freeTierSection}
 
 ## Before it runs: wire up the backend
 
@@ -686,9 +780,30 @@ The \`qf\` client in \`src/quickflo.ts\` exposes:
 - \`qf.forms.*\` — the full form lifecycle: \`getFormSchema\`, \`getFormPrefill\`,
   \`uploadFormFile\`, \`getFormConfirmation\`, \`submitForm\`, plus credentials/OTP/magic-link
   auth for external-user forms.
+- \`qf.billing.checkout(params)\` / \`qf.billing.billingPortal(params?)\` — the
+  centralized platform Stripe flows. Address checkout by \`{ tier }\` (+ optional
+  \`interval\`, default \`month\`) or \`{ priceId }\`; \`organizationId\` auto-fills from
+  onboarding and \`successUrl\`/\`cancelUrl\` default to the current page:
+
+  \`\`\`ts
+  const { data } = await qf.billing.checkout({ tier: 'pro' });
+  if (data?.url) window.location.href = data.url;
+  \`\`\`
+
+  Subscription *status* is just the entitlement — read it from \`ensureOnboarded()\`.
 
 Every HTTP method returns \`{ data, error, response }\` — check \`error\` before
-reading \`data\`.
+reading \`data\`. Prefer a throw? \`import { unwrap } from '@quickflo/app-sdk'\` and
+\`const { url } = unwrap(await qf.billing.checkout({ tier: 'pro' }))\`.
+
+## Trigger naming
+
+Webhook/form routes are **dotted and namespaced**: your app's own workflows are
+\`<app>.<trigger>\` (e.g. \`${opts.appId}.start-job\`), and the platform billing
+routes are \`stripe.*\`. This **route name** is what you pass to
+\`qf.webhooks.run(...)\` / \`qf.forms.*\` — it is *distinct from* the workflow's
+\`name:\` field in the builder. Mismatch them and the call silently 404s, so copy
+the route name from the trigger config, not the workflow title.
 `;
 }
 
@@ -697,6 +812,10 @@ function setupChecklist(opts: TemplateOptions): string {
   const identityStep = opts.authMode === 'supabase'
     ? "- [ ] Set `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` in `.env` to the **QuickFlo** Supabase project (not your own — that's what makes identity portable to quickflo.app)."
     : '- [ ] Wire `getAuthToken` in `src/quickflo.ts` to your identity provider (`--auth none` was selected — non-Supabase identity is not portable to quickflo.app).';
+
+  const freeTierStep = opts.freeTier
+    ? '\n- [ ] Enable **Allow anonymous sign-ins** in the QuickFlo Supabase project (Auth → Providers) — required by `ensureAnonSession()` for the free-demo path.'
+    : '';
 
   return `# Setup checklist — ${opts.name}
 
@@ -708,18 +827,18 @@ Everything left before \`${opts.name}\` is live. Generated by \`quickflo microap
 - [ ] Create the form trigger in the workflow builder with \`auth.provider = 'qf-identity'\`, then set its name in \`.env\` as \`VITE_QF_FORM_NAME\`.
 
 ## Identity
-${identityStep}
+${identityStep}${freeTierStep}
 
 ## Billing (Stripe)
 - [ ] Review \`stripe.config.json\` — tiers, prices, and the limits/features each tier grants.
 - [ ] \`quickflo microapp stripe-sync\` against test mode, then \`--live\` for production.
 - [ ] Confirm \`stripeProductIds\` is populated in \`apps.config.snippet.md\` and \`VITE_QF_PRICE_*\` landed in \`.env\`.
-- [ ] Wire checkout in the app using those price ids (or their lookup keys).
+- [ ] Wire checkout via \`qf.billing.checkout({ tier })\` (or \`{ priceId }\`) and a "manage plan" button via \`qf.billing.billingPortal()\`. Billing runs on the platform org automatically — no per-app billing code.
 
 ## Ship
 - [ ] \`pnpm build\` succeeds.
 - [ ] Deploy the static build to your host.
-- [ ] Smoke test the full loop: sign in → onboarding → entitlement readout → submit a \`qf-identity\` form with no second login.
+- [ ] Smoke test the full loop: sign in → onboarding → entitlement readout → submit a \`qf-identity\` form with no second login → \`qf.billing.checkout({ tier })\` returns a Stripe URL.
 `;
 }
 
