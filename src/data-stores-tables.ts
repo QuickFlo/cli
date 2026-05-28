@@ -11,17 +11,18 @@ import { confirmDestructive } from './confirm.ts';
 import { openSession } from './session.ts';
 
 interface TablesListResult {
-  data: Array<{ tableName: string; keyCount?: number; analyticsTag?: string }>;
+  tables: Array<{ tableName: string; keyCount?: number; analyticsTag?: string }>;
   total: number;
+  hasMore?: boolean;
 }
 
 export async function fetchTables(
   client: ApiClient,
   opts: { all: boolean; limit?: number },
-): Promise<TablesListResult['data']> {
+): Promise<TablesListResult['tables']> {
   const pageSize = opts.limit && !opts.all ? opts.limit : 100;
   let offset = 0;
-  const all: TablesListResult['data'] = [];
+  const all: TablesListResult['tables'] = [];
   while (true) {
     const params = new URLSearchParams();
     params.set('limit', String(pageSize));
@@ -30,7 +31,7 @@ export async function fetchTables(
       client,
       `/data-stores/tables?${params.toString()}`,
     );
-    const page = res.data ?? [];
+    const page = res.tables ?? [];
     all.push(...page);
     if (page.length < pageSize) break;
     if (!opts.all) break;
