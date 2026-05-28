@@ -33,11 +33,20 @@ export async function apiFetch<T>(
       parsed = undefined;
     }
     const body = parsed as
-      | { message?: string | string[]; code?: string; error?: string }
+      | { message?: unknown; code?: string; error?: unknown }
       | undefined;
-    const message = Array.isArray(body?.message)
-      ? body!.message.join('; ')
-      : (body?.message ?? body?.error ?? text ?? res.statusText);
+    // Normalize whatever the API put in `message`/`error` to a readable string.
+    // Nested objects (e.g. validation detail) are JSON-stringified rather than
+    // coerced to the useless "[object Object]".
+    const stringify = (v: unknown): string | undefined => {
+      if (v == null) return undefined;
+      if (typeof v === 'string') return v;
+      if (Array.isArray(v)) return v.map((x) => stringify(x)).filter(Boolean).join('; ');
+      if (typeof v === 'object') return JSON.stringify(v);
+      return String(v);
+    };
+    const message = stringify(body?.message) ?? stringify(body?.error) ?? text ??
+      res.statusText;
     throw new ApiError(res.status, path, `API ${res.status} ${path}: ${message}`, {
       code: body?.code,
       details: parsed ?? text,

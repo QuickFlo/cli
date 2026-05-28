@@ -59,8 +59,13 @@ async function backupDataStores(
   try {
     tables = await fetchTables(client, { all: true });
   } catch (e) {
-    if (e instanceof ApiError && (e.status === 404 || e.status === 501)) {
-      console.error(colors.dim('  data-stores not available on this org — skipping'));
+    // 404/501 = surface absent; 401/403 = token/org not entitled to data-stores.
+    // The rest of the backup succeeded with this token, so a data-stores auth
+    // error means "not available here", not a real failure — skip, don't abort.
+    if (e instanceof ApiError && [401, 403, 404, 501].includes(e.status)) {
+      console.error(
+        colors.dim(`  data-stores not available on this org (${e.status}) — skipping`),
+      );
       return 'skipped';
     }
     throw e;
