@@ -51,6 +51,8 @@ import { runEnvironmentsDelete } from './src/environments-delete.ts';
 import { runEnvironmentsCreate } from './src/environments-create.ts';
 import { runEnvironmentsUpdate } from './src/environments-update.ts';
 import { runTriggersList } from './src/triggers-list.ts';
+import { runTriggersPull } from './src/triggers-pull.ts';
+import { runTriggersPush } from './src/triggers-push.ts';
 import { runTriggersGet } from './src/triggers-get.ts';
 import { runTriggersCreate } from './src/triggers-create.ts';
 import { runTriggersUpdate } from './src/triggers-update.ts';
@@ -73,6 +75,7 @@ import {
   runDataStoresRecordsSet,
 } from './src/data-stores-records.ts';
 import { runDataStoresImport } from './src/data-stores-import.ts';
+import { runBackup } from './src/backup.ts';
 import { runDataStoresExport } from './src/data-stores-export.ts';
 import { setQuiet } from './src/log.ts';
 import { printError } from './src/errors.ts';
@@ -1228,9 +1231,15 @@ const microappNew = new Command()
   .option('--framework <kind:string>', 'Project framework (only vite-ts for now)', {
     default: 'vite-ts',
   })
+  .option(
+    '--free-tier',
+    'Emit anonymous free-demo helpers (requires --auth supabase + anonymous sign-ins enabled in the QF Supabase project)',
+    { default: false },
+  )
   .example('Default (Supabase identity)', 'quickflo microapp new my-app')
   .example('Custom SKU', 'quickflo microapp new my-app --app-id acme-portal')
   .example('Embedded / non-Supabase', 'quickflo microapp new my-app --auth none')
+  .example('With an anonymous free demo', 'quickflo microapp new my-app --free-tier')
   .action(async (opts, name) => {
     await runMicroappNew({
       name,
@@ -1238,6 +1247,7 @@ const microappNew = new Command()
       appId: opts.appId,
       auth: opts.auth,
       framework: opts.framework,
+      freeTier: opts.freeTier,
     });
   });
 
@@ -1923,9 +1933,86 @@ const triggersDuplicate = new Command()
     });
   });
 
+const triggersPull = new Command()
+  .description(
+    'Download triggers to a local directory. Each file links its workflow by name (round-trips with `triggers push`).',
+  )
+  .type('by', byType)
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-d, --dir <path:file>', 'Destination directory for JSON files', {
+    default: './triggers',
+  })
+  .option('-w, --workflow <ref:string>', 'Scope to one workflow (UUID, SUID, or name)')
+  .option('--by <kind:by>', 'Force workflow lookup mode (only with --workflow)')
+  .option(
+    '-n, --name <substr:string>',
+    'Substring match on trigger name (shorthand for --where name:re:<substr>)',
+  )
+  .option(
+    '--where <expr:string>',
+    'Filter expression <field>:<op>:<value>. Repeatable.',
+    { collect: true },
+  )
+  .option('--order <spec:string>', 'Sort order <field>[:ASC|DESC]')
+  .option('--limit <n:number>', 'Max results')
+  .option('--raw-query <qs:string>', 'Raw URLSearchParams passthrough')
+  .option('--force', 'Overwrite local files that differ from remote', { default: false })
+  .option('--dry-run', 'Print the plan without writing any files', { default: false })
+  .option(
+    '--include-packages',
+    'Also pull triggers installed from packages (default: org-owned only)',
+    { default: false },
+  )
+  .example('Pull all triggers', 'quickflo triggers pull -d ./triggers -o abcd')
+  .example(
+    'Pull one workflow’s triggers',
+    "quickflo triggers pull -w 'Order Handler' -d ./triggers -o abcd",
+  )
+  .action(async (opts) => {
+    await runTriggersPull({
+      dir: opts.dir,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      workflow: opts.workflow,
+      by: opts.by,
+      name: opts.name,
+      where: opts.where,
+      order: opts.order,
+      limit: opts.limit,
+      rawQuery: opts.rawQuery,
+      force: opts.force,
+      dryRun: opts.dryRun,
+      includePackages: opts.includePackages,
+    });
+  });
+
+const triggersPush = new Command()
+  .description(
+    'Bulk upsert triggers from a directory, associating each with its workflow by name. Push workflows first.',
+  )
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-d, --dir <path:file>', 'Directory of trigger JSON files', {
+    default: './triggers',
+  })
+  .option('--dry-run', 'Print the plan without making any changes', { default: false })
+  .example('Push triggers', 'quickflo triggers push -d ./triggers -o abcd')
+  .example('Dry-run', 'quickflo triggers push --dry-run -o abcd')
+  .action(async (opts) => {
+    await runTriggersPush({
+      dir: opts.dir,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      dryRun: opts.dryRun,
+    });
+  });
+
 const triggers = new Command()
   .description('Manage workflow triggers (webhooks, schedules, forms, events).')
   .command('list', triggersList)
+  .command('pull', triggersPull)
+  .command('push', triggersPush)
   .command('get', triggersGet)
   .command('create', triggersCreate)
   .command('update', triggersUpdate)
@@ -2110,6 +2197,48 @@ const dataStores = new Command()
   .command('import', dsImport)
   .command('export', dsExport);
 
+// ─── Backup ──────────────────────────────────────────────────────────────────
+
+const backup = new Command()
+  .description(
+    'Pull everything (workflows, connections, environments, triggers, data-stores) into one folder. Defaults to a folder named after the org.',
+  )
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option(
+    '-d, --dir <path:file>',
+    'Destination root folder (default: the org name, slugified)',
+  )
+  .option('--force', 'Overwrite local files that differ from remote', { default: false })
+  .option('--dry-run', 'Print the plan without writing any files', { default: false })
+  .option('--mask', 'Redact connection/environment secrets as "***"', { default: false })
+  .option(
+    '--include-packages',
+    'Also back up resources installed from packages (default: org-owned only)',
+    { default: false },
+  )
+  .option(
+    '--data-store-limit <n:number>',
+    'Max records to export per data-store table (default 10000). Set high to capture huge tables.',
+    { default: 10000 },
+  )
+  .example('Back up an org', 'quickflo backup -o acme')
+  .example('Back up to a specific folder', 'quickflo backup -d ./snapshots/acme -o acme')
+  .example('Preview without writing', 'quickflo backup --dry-run -o acme')
+  .example('Capture large data-store tables', 'quickflo backup --data-store-limit 1000000 -o acme')
+  .action(async (opts) => {
+    await runBackup({
+      dir: opts.dir,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      force: opts.force,
+      dryRun: opts.dryRun,
+      mask: opts.mask,
+      includePackages: opts.includePackages,
+      dataStoreLimit: opts.dataStoreLimit,
+    });
+  });
+
 // Surface a JSON error envelope when any command in the tree was given -j/--json.
 // Cliffy parses per-command, so the root catch can't see per-command flags
 // directly — scan argv to honor the contract at the top-level boundary.
@@ -2132,6 +2261,7 @@ try {
     .command('environments', environments)
     .command('triggers', triggers)
     .command('data-stores', dataStores)
+    .command('backup', backup)
     .parse(Deno.args);
 } catch (err) {
   Deno.exit(printError(err, wantsJsonErrors));
