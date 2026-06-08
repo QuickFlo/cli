@@ -763,28 +763,32 @@ const workflowsExecutions = new Command()
   .command('restore', workflowsExecutionsRestore);
 
 const workflowsValidate = new Command()
+  .alias('check')
   .description(
-    'Validate a workflow definition locally (zero network by default; --strict adds a server round-trip).',
+    'Validate a workflow definition against the server without saving or running it.',
   )
   .arguments('[file:string]')
-  .option('-o, --org <suid:string>', 'Organization SUID or UUID (required for --strict)')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('--from-stdin', 'Read the definition JSON from stdin instead of a file.', {
     default: false,
   })
   .option(
     '--strict',
-    'Also validate step configs against the live /workflows/steps/info schemas.',
+    'Treat warnings (e.g. missing connections) as failures (non-zero exit).',
     {
       default: false,
     },
   )
-  .option('-j, --json', 'Emit JSON instead of human-readable error list.', { default: false })
-  .example('Validate a file', 'quickflo workflows validate ./my-wf.json')
-  .example('Pipe from stdout', 'cat ./my-wf.json | quickflo workflows validate --from-stdin')
+  .option('-j, --json', 'Emit the { ok, errors, warnings } result as JSON.', {
+    default: false,
+  })
+  .example('Validate a file', 'quickflo workflows validate ./my-wf.json -o abcd')
+  .example('Alias', 'quickflo workflows check ./my-wf.json -o abcd')
+  .example('Pipe from stdin', 'cat ./my-wf.json | quickflo workflows validate --from-stdin -o abcd')
   .example(
-    'Validate with server schema check',
-    'quickflo workflows validate ./my-wf.json --strict -o abcd',
+    'Strict + JSON (agent loop)',
+    'quickflo workflows validate ./my-wf.json --strict -j -o abcd',
   )
   .action(async (opts, file) => {
     await runWorkflowsValidate({

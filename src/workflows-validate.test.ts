@@ -1,115 +1,43 @@
 /**
- * Smoke tests for the local (zero-network) validation path. These verify the
- * three semantic rules the CLI re-implements until @quickflo/schemas is
- * published. The strict (network) path is exercised manually against a real
- * org.
- *
- * Tests call `localValidate` directly to avoid disk I/O — the file/stdin
- * source path is exercised end-to-end manually.
+ * Tests for the validate command's pure failure-decision logic. Validation
+ * itself is server-side (POST /workflows/validate); the network path is
+ * exercised manually against a real org. Here we only assert how `--strict`
+ * turns the server's { errors, warnings } into a pass/fail outcome.
  */
 
-import { assert, assertEquals } from '@std/assert';
-import { localValidate } from './workflows-validate.ts';
+import { assertEquals } from '@std/assert';
+import {
+  validationFailed,
+  type ValidationResult,
+} from './workflows-validate.ts';
 
-Deno.test('validate: minimal valid workflow passes', () => {
-  const r = localValidate({ name: 'wf', steps: [{ id: 'a', stepType: 'http' }] });
-  assert(r.ok, `expected ok, got errors: ${JSON.stringify(r.errors)}`);
-});
-
-Deno.test('validate: missing name fails', () => {
-  const r = localValidate({ steps: [] });
-  assertEquals(r.ok, false);
-  assert(r.errors.some((e) => e.path === '$.name'));
-});
-
-Deno.test('validate: missing steps array fails', () => {
-  const r = localValidate({ name: 'wf' });
-  assertEquals(r.ok, false);
-  assert(r.errors.some((e) => e.path === '$.steps'));
-});
-
-Deno.test('validate: duplicate step ids fail', () => {
-  const r = localValidate({
-    name: 'wf',
-    steps: [
-      { id: 'a', stepType: 'http' },
-      { id: 'a', stepType: 'http' },
-    ],
+function result(
+  errors: number,
+  warnings: number,
+): ValidationResult {
+  const mk = (severity: 'error' | 'warning') => ({
+    ruleId: 'test',
+    severity,
+    message: 'x',
   });
-  assertEquals(r.ok, false);
-  assert(r.errors.some((e) => e.code === 'duplicate_id'));
+  return {
+    ok: errors === 0,
+    errors: Array.from({ length: errors }, () => mk('error')),
+    warnings: Array.from({ length: warnings }, () => mk('warning')),
+  };
+}
+
+Deno.test('clean result never fails', () => {
+  assertEquals(validationFailed(result(0, 0), false), false);
+  assertEquals(validationFailed(result(0, 0), true), false);
 });
 
-Deno.test('validate: codeStep inside concurrent forEach fails', () => {
-  const r = localValidate({
-    name: 'wf',
-    steps: [
-      {
-        id: 'loop',
-        stepType: 'forEach',
-        config: {
-          concurrency: 4,
-          steps: [{ id: 'code', stepType: 'codeStep' }],
-        },
-      },
-    ],
-  });
-  assertEquals(r.ok, false);
-  assert(r.errors.some((e) => e.code === 'CodeStepInConcurrentForEach'));
+Deno.test('errors always fail, strict or not', () => {
+  assertEquals(validationFailed(result(2, 0), false), true);
+  assertEquals(validationFailed(result(2, 0), true), true);
 });
 
-Deno.test('validate: codeStep inside sequential forEach passes', () => {
-  const r = localValidate({
-    name: 'wf',
-    steps: [
-      {
-        id: 'loop',
-        stepType: 'forEach',
-        config: {
-          concurrency: 1,
-          steps: [{ id: 'code', stepType: 'codeStep' }],
-        },
-      },
-    ],
-  });
-  assert(r.ok, `expected ok, got errors: ${JSON.stringify(r.errors)}`);
-});
-
-Deno.test('validate: filter referencing unknown stepId fails', () => {
-  const r = localValidate({
-    name: 'wf',
-    steps: [
-      {
-        id: 'a',
-        stepType: 'http',
-        config: { filters: [{ stepId: 'does-not-exist', output: 'x' }] },
-      },
-    ],
-  });
-  assertEquals(r.ok, false);
-  assert(r.errors.some((e) => e.code === 'UnknownFilterRule'));
-});
-
-Deno.test('validate: filter referencing known stepId passes', () => {
-  const r = localValidate({
-    name: 'wf',
-    steps: [
-      { id: 'a', stepType: 'http' },
-      {
-        id: 'b',
-        stepType: 'http',
-        config: { filters: [{ stepId: 'a', output: 'x' }] },
-      },
-    ],
-  });
-  assert(r.ok, `expected ok, got errors: ${JSON.stringify(r.errors)}`);
-});
-
-Deno.test('validate: codeStep emits tier warning (not error)', () => {
-  const r = localValidate({
-    name: 'wf',
-    steps: [{ id: 'a', stepType: 'codeStep' }],
-  });
-  assert(r.ok);
-  assert(r.warnings.some((w) => w.code === 'CodeStepRequiresMediumTier'));
+Deno.test('warnings fail only under --strict', () => {
+  assertEquals(validationFailed(result(0, 3), false), false);
+  assertEquals(validationFailed(result(0, 3), true), true);
 });
