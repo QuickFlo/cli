@@ -19,7 +19,9 @@ interface StepInfo {
   ui?: { category?: string; displayName?: string };
 }
 
-type StepInfoResponse = StepInfo[] | { data: StepInfo[] };
+// The server (`GET /workflows/steps/info`) wraps the array under `steps`.
+// Tolerate `data` and a bare array too, in case the endpoint shape shifts.
+type StepInfoResponse = StepInfo[] | { steps?: StepInfo[]; data?: StepInfo[] };
 
 function truncate(s: string, n: number): string {
   return s.length <= n ? s : s.slice(0, n - 1) + '…';
@@ -27,7 +29,7 @@ function truncate(s: string, n: number): string {
 
 async function fetchAll(client: Parameters<typeof apiFetch>[0]): Promise<StepInfo[]> {
   const res = await apiFetch<StepInfoResponse>(client, `/workflows/steps/info`);
-  return Array.isArray(res) ? res : (res.data ?? []);
+  return Array.isArray(res) ? res : (res.steps ?? res.data ?? []);
 }
 
 export interface WorkflowsStepsListOptions {

@@ -150,7 +150,43 @@ quickflo workflows pull -n 'Free Tool' -d ./free-tools      # name substring
 quickflo workflows pull --where name:re:'^Free' -d ./free
 quickflo workflows pull -d ./workflows --force              # overwrite local divergence
 quickflo workflows pull -d ./workflows --dry-run
+
+# Validate (server-side; no save, no run) — alias: check
+quickflo workflows validate ./my-wf.json -o abcd            # { ok, errors, warnings }
+quickflo workflows validate ./my-wf.json --strict -j        # warnings fail too; JSON out
+cat ./my-wf.json | quickflo workflows validate --from-stdin -o abcd
 ```
+
+## MCP server
+
+`quickflo mcp` runs a stdio [MCP](https://modelcontextprotocol.io) server so an AI
+agent (Claude Code, Claude Desktop, Cursor) can build workflows with typed tools:
+
+- `list_steps`, `get_step_schema`, `list_connections` — introspect the catalog
+- `validate_workflow` — the compiler loop (undefined/forward references, unknown
+  filters/fields, missing connections); run after every edit
+- `save_workflow_draft` — create/update a workflow as a draft (no triggers, no
+  execution; server validates on save)
+
+It authenticates with your active CLI profile (`quickflo auth login` first) and is
+a thin client — all validation lives server-side. Add it to your MCP host config:
+
+```json
+{
+  "mcpServers": {
+    "quickflo": {
+      "command": "quickflo",
+      "args": ["mcp"],
+      "env": { "QF_ORG": "abcd" }
+    }
+  }
+}
+```
+
+(If `quickflo` isn't on PATH, use `"command": "deno"`, `"args": ["run", "-A",
+"/path/to/quickflo-cli/mod.ts", "mcp"]`.) Set `QF_ORG` to your org, or pass `org`
+per tool call. stdio only for now — claude.ai web (remote transport) is a
+follow-up.
 
 ## Packages
 

@@ -90,6 +90,7 @@ import { runWorkflowsExecutionsCancel } from './src/workflows-executions-cancel.
 import { runWorkflowsExecutionsDelete } from './src/workflows-executions-delete.ts';
 import { runWorkflowsExecutionsRestore } from './src/workflows-executions-restore.ts';
 import { runWorkflowsValidate } from './src/workflows-validate.ts';
+import { runMcp } from './src/mcp.ts';
 import { runWorkflowsStepsGet, runWorkflowsStepsList } from './src/workflows-steps.ts';
 import { runConnectionsTest } from './src/connections-test.ts';
 
@@ -2249,6 +2250,18 @@ const backup = new Command()
 const wantsJsonErrors = Deno.args.some((a) => a === '-j' || a === '--json');
 if (Deno.args.some((a) => a === '--quiet')) setQuiet(true);
 
+const mcp = new Command()
+  .description(
+    'Run a stdio MCP server exposing workflow tools (list_steps, get_step_schema, list_connections, validate_workflow, save_workflow_draft) to MCP hosts. Auth via the active profile; org via QF_ORG or per-tool arg.',
+  )
+  .example(
+    'Run the MCP server',
+    'quickflo mcp   # configure your MCP host to launch this',
+  )
+  .action(async () => {
+    await runMcp();
+  });
+
 try {
   await new Command()
     .name('quickflo')
@@ -2266,6 +2279,7 @@ try {
     .command('triggers', triggers)
     .command('data-stores', dataStores)
     .command('backup', backup)
+    .command('mcp', mcp)
     .parse(Deno.args);
 } catch (err) {
   Deno.exit(printError(err, wantsJsonErrors));

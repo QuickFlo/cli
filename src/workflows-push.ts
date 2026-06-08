@@ -13,34 +13,14 @@ import {
   type PushFileNode,
   topoSortFiles,
 } from './workflow-deps.ts';
-
-/**
- * Loose shape: only the fields the CLI itself reads (for topo-sort,
- * filename, control flow) are typed strictly. Everything else passes
- * through to the server — the server's Zod (createWorkflowTemplate-
- * Schema / updateWorkflowTemplateSchema) is the validation source of
- * truth and rejects anything it doesn't recognize. Avoids the silent-
- * drop class of bug that an allowlist invites; a new server field
- * doesn't need a CLI patch to round-trip.
- */
-interface WorkflowDefinition {
-  id?: string;
-  name: string;
-  // `steps` lives at the top level in CLI files (push wraps it into
-  // `definition.steps` server-side); read here for topo-sort.
-  steps: unknown[];
-  // Everything else — description, isTemplate, isPublic, tags,
-  // parameters, uiMetadata, environment, initial, agentToolMetadata,
-  // and anything the server adds later — passes through to the
-  // payload via the denylist-based builder below.
-  [key: string]: unknown;
-}
-
-interface ExistingWorkflow {
-  id: string;
-  name: string;
-  packageInstallId?: string | null;
-}
+import {
+  createWorkflow,
+  type ExistingWorkflow,
+  findWorkflowById,
+  findWorkflowByName,
+  updateWorkflow,
+  type WorkflowDefinition,
+} from './workflows-save.ts';
 
 interface ExistingTrigger {
   id: string;
@@ -64,150 +44,6 @@ interface PushResult {
   triggerAction: 'created' | 'existing' | 'regenerated' | 'failed' | 'skipped';
   webhookUrl?: string;
   secret?: string;
-}
-
-/**
- * Lookup is restricted to org-owned (packageInstallId IS NULL) rows.
- * A customer-owned and a package-managed row are allowed to share a name
- * in the same org — the unique index is (organizationId, packageInstallId,
- * name) with NULLS NOT DISTINCT (workflow-template.model.ts). Without this
- * filter, push would silently PATCH a package-managed row when names
- * collide. The installer is the only legitimate writer of package rows.
- */
-async function findWorkflowByName(
-  client: ApiClient,
-  name: string,
-): Promise<ExistingWorkflow | null> {
-  const params = new URLSearchParams();
-  params.set('where[name][$eq]', name);
-  params.set('where[organizationId][$eq]', client.orgId);
-  params.set('where[packageInstallId]', 'null');
-  params.set('options[limit]', '1');
-  const res = await apiFetch<{ data: ExistingWorkflow[]; total: number }>(
-    client,
-    `/workflows?${params.toString()}`,
-  );
-  return res.data?.[0] || null;
-}
-
-/**
- * If a file pins an id that belongs to a package-installed workflow, fail
- * loudly rather than PATCHing it. Pull never writes package-row ids into
- * customer files, so this only triggers on intentional copy-paste — and
- * silently mutating a package-managed row is exactly what we're trying
- * to prevent.
- */
-async function findWorkflowById(
-  client: ApiClient,
-  id: string,
-): Promise<ExistingWorkflow | null> {
-  let row: ExistingWorkflow;
-  try {
-    row = await apiFetch<ExistingWorkflow>(client, `/workflows/${id}`);
-  } catch {
-    return null;
-  }
-  if (row.packageInstallId) {
-    throw new Error(
-      `workflow id ${id} belongs to a package-installed workflow (packageInstallId=${row.packageInstallId}); remove the "id" field from the file to push as a new customer-owned workflow`,
-    );
-  }
-  return row;
-}
-
-/**
- * Top-level fields the server fully owns — mutating them client-side is
- * either rejected (RBAC: organizationId), silently overwritten on save
- * (auto-derived: usedActionTypes), or meaningless to the engine (audit:
- * createdAt, updatedAt, userId; lifecycle: packageInstallId — the
- * installer is the only legitimate writer of that field, customer-side
- * pushes go to customer-owned rows).
- *
- * Note on `id`: not in this set. `id` is server-owned BUT clients are
- * permitted to pin one on create as a stable handle, and pull writes
- * it into the file so a subsequent push finds the same row by id even
- * after a rename. The duplicate-id check in `runWorkflowsPush` catches
- * the copy-and-rename footgun where a user forgets to drop the id.
- */
-const SERVER_MANAGED_FIELDS = new Set([
-  'organizationId',
-  'packageInstallId',
-  'createdAt',
-  'updatedAt',
-  'userId',
-  'usedActionTypes',
-]);
-
-/**
- * Top-level fields that belong INSIDE `definition` server-side. The CLI
- * file shape flattens them for ergonomics (`environment`, `initial`,
- * `steps`, `options` live at the top level when authored), so the push
- * payload needs to nest them back. `options` carries executionMode,
- * stopOnError, timeoutMilliseconds, and workerTier.
- */
-const DEFINITION_FIELDS = new Set(['environment', 'initial', 'steps', 'options']);
-
-// The `environment` field lives INSIDE `definition`, not at the top level —
-// see workflow-template.service.ts: `template.definition.environment`.
-function buildDefinition(def: WorkflowDefinition): Record<string, unknown> {
-  const definition: Record<string, unknown> = {
-    steps: def['steps'] ?? [],
-  };
-  if (def['initial'] !== undefined) definition['initial'] = def['initial'];
-  if (def['environment']) definition['environment'] = def['environment'];
-  if (def['options'] !== undefined) definition['options'] = def['options'];
-  return definition;
-}
-
-// Builds the top-level payload for POST/PATCH via denylist passthrough.
-// Server-managed fields are stripped; `definition` is rebuilt from the
-// flattened steps/initial/environment; everything else (including
-// fields the CLI doesn't explicitly know about) flows through. The
-// server's Zod validates and rejects unknown fields — silent CLI
-// drops are not a failure mode we tolerate here (bd-y8tr).
-function buildWorkflowPayload(
-  def: WorkflowDefinition,
-): Record<string, unknown> {
-  const body: Record<string, unknown> = {
-    name: def.name,
-    definition: buildDefinition(def),
-  };
-  for (const [key, value] of Object.entries(def)) {
-    if (SERVER_MANAGED_FIELDS.has(key)) continue;
-    if (DEFINITION_FIELDS.has(key)) continue; // handled by buildDefinition
-    if (key === 'name' || key === 'id' || key === 'definition') continue;
-    if (value === undefined) continue;
-    body[key] = value;
-  }
-  return body;
-}
-
-function createWorkflow(
-  client: ApiClient,
-  def: WorkflowDefinition,
-): Promise<ExistingWorkflow> {
-  const body: Record<string, unknown> = {
-    ...buildWorkflowPayload(def),
-    organizationId: client.orgId,
-  };
-  if (def.id) body['id'] = def.id;
-  if (body['isTemplate'] === undefined) body['isTemplate'] = false;
-  if (body['isPublic'] === undefined) body['isPublic'] = false;
-  return apiFetch<ExistingWorkflow>(client, `/workflows`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-}
-
-function updateWorkflow(
-  client: ApiClient,
-  id: string,
-  def: WorkflowDefinition,
-): Promise<ExistingWorkflow> {
-  return apiFetch<ExistingWorkflow>(client, `/workflows/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(buildWorkflowPayload(def)),
-  });
 }
 
 async function listTriggers(
