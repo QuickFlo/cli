@@ -91,6 +91,7 @@ import { runWorkflowsExecutionsDelete } from './src/workflows-executions-delete.
 import { runWorkflowsExecutionsRestore } from './src/workflows-executions-restore.ts';
 import { runWorkflowsValidate } from './src/workflows-validate.ts';
 import { runMcp } from './src/mcp.ts';
+import { runSkillInstall } from './src/skill-install.ts';
 import { runWorkflowsStepsGet, runWorkflowsStepsList } from './src/workflows-steps.ts';
 import { runConnectionsTest } from './src/connections-test.ts';
 
@@ -2281,6 +2282,25 @@ const backup = new Command()
 const wantsJsonErrors = Deno.args.some((a) => a === '-j' || a === '--json');
 if (Deno.args.some((a) => a === '--quiet')) setQuiet(true);
 
+const skillInstall = new Command()
+  .description(
+    'Install the QuickFlo agent skill from the guides embedded in this CLI (no repo or network needed). harness = claude (default) | agents (Codex/AGENTS.md) | mcp (prints host config).',
+  )
+  .arguments('[harness:string] [target:string]')
+  .example('Claude skill (default → ~/.claude/skills/quickflo)', 'quickflo skill install')
+  .example('Codex / agents.md', 'quickflo skill install agents ~/.codex/AGENTS.md')
+  .example('Print MCP host config', 'quickflo skill install mcp')
+  .action(async (_opts, harness, target) => {
+    await runSkillInstall({ harness, target });
+  });
+
+const skill = new Command()
+  .description('Install the QuickFlo agent skill (Claude SKILL.md / Codex AGENTS.md / MCP config).')
+  .action(function () {
+    this.showHelp();
+  })
+  .command('install', skillInstall);
+
 const mcp = new Command()
   .description(
     'Run a stdio MCP server exposing workflow tools (list_steps, get_step_schema, list_connections, validate_workflow, save_workflow_draft) to MCP hosts. Auth via the active profile; org via QF_ORG or per-tool arg.',
@@ -2311,6 +2331,7 @@ try {
     .command('data-stores', dataStores)
     .command('backup', backup)
     .command('mcp', mcp)
+    .command('skill', skill)
     .parse(Deno.args);
 } catch (err) {
   Deno.exit(printError(err, wantsJsonErrors));

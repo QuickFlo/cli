@@ -21,15 +21,51 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   type CallToolRequest,
   CallToolRequestSchema,
+  ListResourcesRequestSchema,
   ListToolsRequestSchema,
+  type ReadResourceRequest,
+  ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { colors } from '@cliffy/ansi/colors';
 import { type ApiClient, apiFetch, type ResolvedOrg, resolveOrganization } from './api.ts';
 import { probeToken, resolveSession } from './auth.ts';
 import { saveWorkflow, type WorkflowDefinition } from './workflows-save.ts';
+import { AGENT_GUIDE, BUILDING_WORKFLOWS } from './skill-guides.ts';
 
 const SERVER_NAME = 'quickflo';
 const SERVER_VERSION = '0.1.0';
+
+// Concise, eager: shown to the model on connect. The full guides ride in
+// resources (on-demand), so this stays short.
+const SERVER_INSTRUCTIONS =
+  'QuickFlo workflow tools — build, validate, and save workflows from your host.\n' +
+  'Loop: discover steps (list_steps / get_step_schema) → write the definition → ' +
+  'validate_workflow after every edit, fix until ok → save_workflow_draft ' +
+  '(creates a draft; no triggers, no execution).\n' +
+  'Read the `quickflo://agent-guide` resource for the full operating guide (auth, ' +
+  'execution debugging, search-attribute filtering) and `quickflo://building-workflows` ' +
+  'for the authoring guide (LiquidJS, step output fields, the tool-workflow contract).\n' +
+  'Validation warnings (e.g. a connection that does not exist yet) are advisory, not blocking.';
+
+// Embedded skill guides served as resources (see skill/bundle-guides.ts).
+const RESOURCES = [
+  {
+    uri: 'quickflo://agent-guide',
+    name: 'QuickFlo agent guide',
+    description:
+      'Operating guide: command surface, auth/org rules, the validate loop, execution debugging, search attributes.',
+    mimeType: 'text/markdown',
+    text: AGENT_GUIDE,
+  },
+  {
+    uri: 'quickflo://building-workflows',
+    name: 'QuickFlo workflow-authoring guide',
+    description:
+      'Deep guide for authoring/editing workflow JSON: definition format, LiquidJS, control flow, tool-workflow contract.',
+    mimeType: 'text/markdown',
+    text: BUILDING_WORKFLOWS,
+  },
+];
 
 interface StepInfo {
   stepType: string;
@@ -295,10 +331,32 @@ export async function runMcp(): Promise<void> {
 
   const server = new Server(
     { name: SERVER_NAME, version: SERVER_VERSION },
-    { capabilities: { tools: {} } },
+    {
+      instructions: SERVER_INSTRUCTIONS,
+      capabilities: { tools: {}, resources: {} },
+    },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: TOOLS }));
+
+  server.setRequestHandler(ListResourcesRequestSchema, () => ({
+    resources: RESOURCES.map(({ text: _text, ...meta }) => meta),
+  }));
+
+  server.setRequestHandler(
+    ReadResourceRequestSchema,
+    (req: ReadResourceRequest) => {
+      const match = RESOURCES.find((r) => r.uri === req.params.uri);
+      if (!match) {
+        throw new Error(`Unknown resource "${req.params.uri}".`);
+      }
+      return {
+        contents: [
+          { uri: match.uri, mimeType: match.mimeType, text: match.text },
+        ],
+      };
+    },
+  );
 
   server.setRequestHandler(CallToolRequestSchema, async (req: CallToolRequest) => {
     const { name, arguments: args } = req.params;

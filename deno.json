@@ -12,6 +12,7 @@
     "lint": "deno lint",
     "check": "deno check mod.ts",
     "mcp": "deno run --allow-net --allow-read --allow-env --allow-write mod.ts mcp",
+    "bundle:guides": "deno run --allow-read --allow-write skill/bundle-guides.ts",
     "compile": "deno compile --allow-net --allow-read --allow-env --allow-write --output dist/quickflo mod.ts",
     "compile:all": "deno run -A scripts/compile-all.ts",
     "deploy": "bash scripts/deploy.sh"
@@ -30,13 +31,13 @@
     "singleQuote": true,
     "semiColons": true,
     "proseWrap": "preserve",
-    "exclude": ["dist/", "deno.lock"]
+    "exclude": ["dist/", "deno.lock", "src/skill-guides.ts", "skill/*.md"]
   },
   "lint": {
     "rules": {
       "tags": ["recommended"]
     },
-    "exclude": ["dist/"]
+    "exclude": ["dist/", "src/skill-guides.ts"]
   },
   "exclude": ["dist/", ".github/"],
   "publish": {

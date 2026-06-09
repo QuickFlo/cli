@@ -6,10 +6,7 @@
  */
 
 import { assertEquals } from '@std/assert';
-import {
-  validationFailed,
-  type ValidationResult,
-} from './workflows-validate.ts';
+import { validationFailed, type ValidationResult } from './workflows-validate.ts';
 
 function result(
   errors: number,
