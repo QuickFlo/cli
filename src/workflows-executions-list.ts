@@ -7,7 +7,7 @@
 
 import { colors } from '@cliffy/ansi/colors';
 import { type ApiClient, apiFetch } from './api.ts';
-import { buildListParams, type ListOptions } from './filters.ts';
+import { applySearchAttributeFilters, buildListParams, type ListOptions } from './filters.ts';
 import { openSession } from './session.ts';
 import { resolveWorkflowRef } from './workflow-refs.ts';
 import { parseDuration } from './workflows-executions-shared.ts';
@@ -90,6 +90,12 @@ export interface WorkflowsExecutionsListOptions extends ListOptions {
   by?: Lookup;
   status?: string;
   since?: string;
+  /** Repeatable `<path>:<op>:<value>` filters on indexed search attributes. */
+  attr?: string[];
+  /** Match executions whose indexed attributes contain this value anywhere. */
+  attrContains?: string;
+  /** Match executions whose indexed attributes do NOT contain this value anywhere. */
+  attrNotContains?: string;
   all?: boolean;
   apiUrl?: string;
   orgId?: string;
@@ -114,6 +120,12 @@ export async function runWorkflowsExecutionsList(
     const cutoff = new Date(Date.now() - parseDuration(opts.since)).toISOString();
     baseParams.set('where[startedAt][$gte]', cutoff);
   }
+  applySearchAttributeFilters(
+    baseParams,
+    opts.attr,
+    opts.attrContains,
+    opts.attrNotContains,
+  );
 
   const pageSize = opts.limit ?? 25;
   const all = opts.all ?? false;

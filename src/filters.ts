@@ -86,6 +86,83 @@ export function buildWhereParams(opts: FilterOptions): URLSearchParams {
   return params;
 }
 
+/**
+ * Search-attribute operators. Executions index `x-searchable` inputs and the
+ * return-step output under flat dot keys (e.g.
+ * `return.webhookResponse.body.operation`). The server filters them via
+ * `where[searchAttributes.<path>]=<value>` where the VALUE carries the
+ * operator: bare = contains (ILIKE), `=` exact, `!=` not-equals, `!` not-contains.
+ */
+const ATTR_OP_PREFIX: Record<string, string> = {
+  eq: '=',
+  ne: '!=',
+  contains: '',
+  ncontains: '!',
+};
+
+/**
+ * Parse a `--attr` expression into a `[paramKey, paramValue]` pair. Accepts
+ * `<path>:<op>:<value>` (op in eq|ne|contains|ncontains) or the shorthand
+ * `<path>:<value>` (defaults to `eq`, exact match). `<path>` is a dot-path into
+ * the indexed attributes; values may themselves contain colons.
+ *
+ * A `<path>` of `*` is the UI's "search all attributes" form: it routes to the
+ * server's broad operators — `$containsValue` (eq/contains) or
+ * `$notContainsValue` (ne/ncontains) — matching what `*:value` / `*:!value` do
+ * in the executions UI.
+ */
+export function parseAttrExpr(expr: string): [string, string] {
+  const firstColon = expr.indexOf(':');
+  if (firstColon === -1) {
+    throw new Error(
+      `Invalid --attr "${expr}". Expected <path>:<op>:<value> or <path>:<value> ` +
+        `(e.g. return.webhookResponse.body.operation:eq:DELETE, or *:DELETE for any field)`,
+    );
+  }
+  const path = expr.slice(0, firstColon);
+  if (!path) throw new Error(`Invalid --attr "${expr}": empty path.`);
+
+  let op = 'eq';
+  let value = expr.slice(firstColon + 1);
+  const secondColon = value.indexOf(':');
+  if (secondColon !== -1) {
+    const maybeOp = value.slice(0, secondColon);
+    if (Object.hasOwn(ATTR_OP_PREFIX, maybeOp)) {
+      op = maybeOp;
+      value = value.slice(secondColon + 1);
+    }
+  }
+
+  if (path === '*') {
+    // Any-field search: the broad operators take the raw term (no prefix).
+    const broadKey = op === 'ne' || op === 'ncontains' ? '$notContainsValue' : '$containsValue';
+    return [`where[searchAttributes][${broadKey}]`, value];
+  }
+  return [`where[searchAttributes.${path}]`, `${ATTR_OP_PREFIX[op]}${value}`];
+}
+
+/**
+ * Apply `--attr` (per-path filters) and `--attr-contains` (match any indexed
+ * value, server `$containsValue`) to a params object. Used by `executions list`.
+ */
+export function applySearchAttributeFilters(
+  params: URLSearchParams,
+  attrs: string[] | undefined,
+  attrContains: string | undefined,
+  attrNotContains?: string,
+): void {
+  for (const expr of attrs ?? []) {
+    const [k, v] = parseAttrExpr(expr);
+    params.append(k, v);
+  }
+  if (attrContains) {
+    params.set('where[searchAttributes][$containsValue]', attrContains);
+  }
+  if (attrNotContains) {
+    params.set('where[searchAttributes][$notContainsValue]', attrNotContains);
+  }
+}
+
 /** Build query params for a single-page list request. */
 export function buildListParams(opts: ListOptions): URLSearchParams {
   const params = buildWhereParams(opts);

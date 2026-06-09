@@ -500,11 +500,38 @@ const workflowsExecutionsList = new Command()
     '--since <duration:string>',
     'Only executions started within the last <duration> (e.g. 30m, 2h, 1d).',
   )
-  .option('--where <expr:string>', 'Repeatable <field>:<op>:<value> filter.', { collect: true })
+  .option('--where <expr:string>', 'Repeatable <field>:<op>:<value> filter (top-level columns).', {
+    collect: true,
+  })
+  .option(
+    '--attr <expr:string>',
+    'Repeatable filter on an indexed search attribute: <path>:<op>:<value> ' +
+      '(op = eq|ne|contains|ncontains; <path>:<value> defaults to eq). ' +
+      'e.g. return.webhookResponse.body.operation:eq:DELETE. ' +
+      'Use * as the path to search ALL attributes (*:DELETE, *:ncontains:spam).',
+    { collect: true },
+  )
+  .option(
+    '--attr-contains <term:string>',
+    'Match executions whose indexed attributes contain <term> in any value (same as --attr "*:<term>").',
+  )
+  .option(
+    '--attr-not-contains <term:string>',
+    'Match executions whose indexed attributes do NOT contain <term> in any value.',
+  )
+  .option('--raw-query <qs:string>', 'Verbatim URLSearchParams appended to the request.')
   .option('--order <field:string>', 'Sort key (e.g. startedAt:DESC).')
   .option('--limit <n:number>', 'Page size (default 25).')
   .option('--all', 'Paginate through every page until empty.', { default: false })
   .option('-j, --json', 'Emit JSON instead of a table.', { default: false })
+  .example(
+    'Filter by a return attribute',
+    "quickflo workflows executions list --attr 'return.webhookResponse.body.operation:eq:DELETE' --since 1d",
+  )
+  .example(
+    'Match any attribute value',
+    "quickflo workflows executions list --attr-contains 'DELETE' -j",
+  )
   .action(async (opts) => {
     await runWorkflowsExecutionsList({
       workflow: opts.workflow,
@@ -512,6 +539,10 @@ const workflowsExecutionsList = new Command()
       status: opts.status,
       since: opts.since,
       where: opts.where,
+      attr: opts.attr,
+      attrContains: opts.attrContains,
+      attrNotContains: opts.attrNotContains,
+      rawQuery: opts.rawQuery,
       order: opts.order,
       limit: opts.limit,
       all: opts.all,
