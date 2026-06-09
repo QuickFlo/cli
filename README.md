@@ -157,6 +157,30 @@ quickflo workflows validate ./my-wf.json --strict -j        # warnings fail too;
 cat ./my-wf.json | quickflo workflows validate --from-stdin -o abcd
 ```
 
+## Agent skill
+
+Install the QuickFlo agent skill — the operating guide + workflow-authoring conventions
+for driving this CLI — into any agent harness. The guides ship **embedded in the CLI**, so
+installs need no repo checkout and no network:
+
+```bash
+quickflo skill install                               # Claude skill → ~/.claude/skills/quickflo
+quickflo skill install agents ~/.codex/AGENTS.md     # Codex / agents.md
+quickflo skill install mcp                           # print the MCP host-config snippet
+
+# No quickflo installed yet? One shot, no repo:
+deno run -A jsr:@quickflo/cli skill install
+```
+
+| Harness            | What it writes                                                       | Loading                     |
+| ------------------ | -------------------------------------------------------------------- | --------------------------- |
+| `claude` (default) | `SKILL.md` + `building-workflows.md` in `~/.claude/skills/quickflo/` | lazy (description-gated)    |
+| `agents`           | `AGENTS.md` (Codex: `~/.codex/AGENTS.md`, or repo root)              | eager (always-on)           |
+| `mcp`              | prints the MCP host config (see below)                               | tools + on-demand resources |
+
+For **tools**, prefer the MCP server below — it serves these same guides as `quickflo://`
+resources, so MCP hosts get the how-to with no skill file.
+
 ## MCP server
 
 `quickflo mcp` runs a stdio [MCP](https://modelcontextprotocol.io) server so an AI
