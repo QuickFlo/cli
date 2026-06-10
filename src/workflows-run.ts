@@ -178,6 +178,7 @@ export interface WorkflowsRunOptions {
   inputStdin?: boolean;
   env?: string;
   mode?: 'sync' | 'async';
+  respondAs?: 'webhook' | 'execution';
   show?: string[];
   hide?: string[];
   timeout?: number;
@@ -204,8 +205,10 @@ export async function runWorkflowsRun(opts: WorkflowsRunOptions): Promise<void> 
   else if (wf.definition?.environment) body.environment = wf.definition.environment;
 
   const mode = opts.mode ?? 'sync';
+  const respondAs = opts.respondAs ?? 'webhook';
   const params = new URLSearchParams();
   params.set('mode', mode);
+  params.set('respondAs', respondAs);
   if (opts.show?.length) params.set('show', opts.show.join(','));
   if (opts.hide?.length) params.set('hide', opts.hide.join(','));
 

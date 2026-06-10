@@ -97,6 +97,7 @@ import { runConnectionsTest } from './src/connections-test.ts';
 
 const byType = new EnumType(['id', 'suid', 'name']);
 const runModeType = new EnumType(['sync', 'async']);
+const respondAsType = new EnumType(['webhook', 'execution']);
 
 const authLogin = new Command()
   .description(
@@ -422,6 +423,7 @@ const workflowsRun = new Command()
   .description('Trigger a manual workflow run against /workflows/execute.')
   .type('by', byType)
   .type('runMode', runModeType)
+  .type('respondAs', respondAsType)
   .arguments('<ref:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
@@ -437,10 +439,16 @@ const workflowsRun = new Command()
       default: 'sync' as const,
     },
   )
-  .option('--show <ids:string>', 'Comma-separated step IDs to include in the per-step output.', {
+  .option(
+    '--respond-as <r:respondAs>',
+    'Output shape: webhook (default — the body the return step would send over HTTP, ' +
+      'like the real /w/... endpoint) or execution (the step-keyed output, filtered by --show/--hide).',
+    { default: 'webhook' as const },
+  )
+  .option('--show <ids:string>', 'Comma-separated step IDs to include in the output (--respond-as execution only).', {
     collect: true,
   })
-  .option('--hide <ids:string>', 'Comma-separated step IDs to exclude from the per-step output.', {
+  .option('--hide <ids:string>', 'Comma-separated step IDs to exclude from the output (--respond-as execution only).', {
     collect: true,
   })
   .option('--timeout <seconds:number>', 'Client-side timeout (sync mode only).')
@@ -465,6 +473,10 @@ const workflowsRun = new Command()
     `quickflo workflows run my-wf --input '{}' --mode async -o abcd`,
   )
   .example(
+    'Inspect per-step outputs instead of the webhook response',
+    `quickflo workflows run my-wf --respond-as execution --show '*'`,
+  )
+  .example(
     'Run + persist trace and per-step outputs',
     `quickflo workflows run my-wf --input '{}' --save-trace ./trace.json --save-steps-to ./steps/`,
   )
@@ -477,6 +489,7 @@ const workflowsRun = new Command()
       inputStdin: opts.inputStdin,
       env: opts.env,
       mode: opts.mode,
+      respondAs: opts.respondAs,
       show: opts.show?.flatMap((s: string) => s.split(',')),
       hide: opts.hide?.flatMap((s: string) => s.split(',')),
       timeout: opts.timeout,
