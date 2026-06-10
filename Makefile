@@ -32,15 +32,15 @@ check:
 	deno task test
 
 bump:
-	@[ -n "$(NEW_VERSION)" ] || { echo "usage: make bump v=X.Y.Z"; exit 1; }
-	@printf '%s' '$(NEW_VERSION)' | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-].+)?$$' || { echo "bump: version must be semver (got '$(NEW_VERSION)')"; exit 1; }
-	@[ "$(PKG_VERSION)" != "$(NEW_VERSION)" ] || { echo "bump: already at $(NEW_VERSION)"; exit 1; }
-	@[ -z "$$(git status --porcelain)" ] || { echo "bump: working tree dirty — commit or stash first"; exit 1; }
-	@! git rev-parse 'v$(NEW_VERSION)' >/dev/null 2>&1 || { echo "bump: tag v$(NEW_VERSION) already exists"; exit 1; }
-	@printf 'bumping %s -> %s\n' '$(PKG_VERSION)' '$(NEW_VERSION)'
-	sed -i.bak 's/"version": *"[^"]*"/"version": "$(NEW_VERSION)"/' deno.json
-	rm deno.json.bak
-	git add deno.json
+	@if [ -z "$(NEW_VERSION)" ]; then echo "$(PKG_VERSION)"; exit 0; fi; \
+	printf '%s' '$(NEW_VERSION)' | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-].+)?$$' || { echo "bump: version must be semver (got '$(NEW_VERSION)')"; exit 1; }; \
+	[ "$(PKG_VERSION)" != "$(NEW_VERSION)" ] || { echo "bump: already at $(NEW_VERSION)"; exit 1; }; \
+	[ -z "$$(git status --porcelain)" ] || { echo "bump: working tree dirty — commit or stash first"; exit 1; }; \
+	! git rev-parse 'v$(NEW_VERSION)' >/dev/null 2>&1 || { echo "bump: tag v$(NEW_VERSION) already exists"; exit 1; }; \
+	printf 'bumping %s -> %s\n' '$(PKG_VERSION)' '$(NEW_VERSION)'; \
+	sed -i.bak 's/"version": *"[^"]*"/"version": "$(NEW_VERSION)"/' deno.json; \
+	rm deno.json.bak; \
+	git add deno.json; \
 	git commit -m "chore: bump version to $(NEW_VERSION)"
 
 release:
