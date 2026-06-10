@@ -2147,6 +2147,9 @@ const dsRecordsGet = new Command()
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('--meta', 'Emit the full record (timestamps, expiry, ids)', { default: false })
+  .option('-j, --json', 'Compact JSON on one line, no status banner (pipe-friendly)', {
+    default: false,
+  })
   .action(async (opts, table, key) => {
     await runDataStoresRecordsGet({
       tableName: table,
@@ -2154,6 +2157,7 @@ const dsRecordsGet = new Command()
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
       meta: opts.meta,
+      json: opts.json,
     });
   });
 
@@ -2299,7 +2303,9 @@ const backup = new Command()
 // Cliffy parses per-command, so the root catch can't see per-command flags
 // directly — scan argv to honor the contract at the top-level boundary.
 const wantsJsonErrors = Deno.args.some((a) => a === '-j' || a === '--json');
-if (Deno.args.some((a) => a === '--quiet')) setQuiet(true);
+// -j/--json implies --quiet: machine callers want pure payload on stdout and no
+// banner chrome on stderr, so they can chain/capture without scrubbing output.
+if (wantsJsonErrors || Deno.args.some((a) => a === '--quiet')) setQuiet(true);
 
 const skillInstall = new Command()
   .description(

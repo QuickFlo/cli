@@ -12,6 +12,7 @@
 import { colors } from '@cliffy/ansi/colors';
 import { type ApiClient, type ResolvedOrg, resolveOrganization } from './api.ts';
 import { probeToken, resolveSession } from './auth.ts';
+import { info } from './log.ts';
 
 export interface OpenSessionOptions {
   orgId?: string;
@@ -30,18 +31,22 @@ export async function openSession(
 ): Promise<Session> {
   const { token, apiUrl, profileName, source } = await resolveSession();
 
-  console.error(colors.bold.cyan(`QuickFlo — ${commandLabel}`));
-  console.error(colors.dim('─'.repeat(24)));
-  console.error(`  API:     ${apiUrl}`);
+  // The banner is diagnostic chrome — route it through info() so --quiet (and
+  // -j/--json, which implies quiet) suppresses it and stdout/stderr stay clean
+  // for agents that chain or capture merged output. Hard errors below still use
+  // console.error so they always surface.
+  info(colors.bold.cyan(`QuickFlo — ${commandLabel}`));
+  info(colors.dim('─'.repeat(24)));
+  info(`  API:     ${apiUrl}`);
 
   if (profileName) {
-    console.error(
+    info(
       `  Profile: ${profileName} ${
         colors.dim(`(${source === 'env-profile' ? 'QF_PROFILE env' : 'active'})`)
       }`,
     );
   } else {
-    console.error(`  Auth:    ${colors.dim('QF_TOKEN env (one-shot)')}`);
+    info(`  Auth:    ${colors.dim('QF_TOKEN env (one-shot)')}`);
   }
 
   // Single round-trip to /auth/me: validates the token AND returns every org
@@ -77,7 +82,7 @@ export async function openSession(
     Deno.exit(1);
   }
 
-  console.error(
+  info(
     `  Org:     ${org.name} ${colors.dim(org.suid ? `(${org.suid})` : `(${org.id})`)}`,
   );
 

@@ -390,7 +390,8 @@ quickflo data-stores list cli-test --all                   # walk every page
 quickflo data-stores list cli-test --prefix user:
 quickflo data-stores list cli-test --filter status:active --sort updatedAt --desc
 quickflo data-stores list cli-test -j                      # full untruncated values as JSON
-quickflo data-stores get cli-test user:abc                 # prints value JSON
+quickflo data-stores get cli-test user:abc                 # prints value JSON (pretty)
+quickflo data-stores get cli-test user:abc -j              # compact value, no banner — pipe to jq
 quickflo data-stores get cli-test user:abc --meta          # full record + timestamps
 
 quickflo data-stores set cli-test user:abc '{"name":"Acme"}'

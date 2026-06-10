@@ -8,6 +8,7 @@ Source of truth for the CLI is the public repo **https://github.com/QuickFlo/cli
 
 - **JSON-first.** Every list/get/inspect command takes `-j/--json`. Always pass `-j` when you're going to parse output programmatically — the human tables are for display only. Pipe JSON through `jq`.
 - **stdout vs stderr.** stdout is reserved for machine-readable output (`-j` payloads, raw resource JSON, piped streams). stderr carries progress, prompts, warnings, errors. With `-j`, errors come back on stderr as JSON: `{"error":{"code","message","status","path","details"}}`.
+- **`-j` implies `--quiet`.** Passing `-j/--json` also suppresses the `QuickFlo — <command>` status banner (API/Profile/Org lines), so even merged stdout+stderr is pure payload — ideal for chaining or capturing in a harness.
 - **Exit codes are a stable contract — branch on them, don't parse stderr:**
   | Code | Meaning |
   | ---- | ------- |
@@ -123,6 +124,9 @@ quickflo data-stores list <table> --prefix user:          # keys starting with "
 quickflo data-stores list <table> --filter status:active  # JSONB value filter (repeatable, AND-ed)
 quickflo data-stores list <table> --sort updatedAt --desc # sort by key|createdAt|updatedAt
 quickflo data-stores list <table> -j                      # full untruncated values as JSON
+quickflo data-stores get <table> <key>                    # one entry's value (pretty JSON)
+quickflo data-stores get <table> <key> -j                 # compact value, no banner — pipe to jq
+quickflo data-stores get <table> <key> --meta -j          # full record (timestamps/expiry/ids), compact
 ```
 
 The table view truncates each value to 80 chars; use `-j/--json` (or `export`) to get the full value. `--filter` is a server-side JSONB predicate — `field:value` for equality, repeat the flag to AND multiple conditions.

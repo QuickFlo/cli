@@ -137,6 +137,7 @@ export interface DataStoresRecordsGetOptions {
   apiUrl?: string;
   orgId?: string;
   meta?: boolean;
+  json?: boolean;
 }
 
 export async function runDataStoresRecordsGet(
@@ -147,11 +148,11 @@ export async function runDataStoresRecordsGet(
     client,
     `/data-stores/tables/${encodeURIComponent(opts.tableName)}/${encodeURIComponent(opts.key)}`,
   );
-  if (opts.meta) {
-    console.log(JSON.stringify(entry, null, 2));
-    return;
-  }
-  console.log(JSON.stringify(entry.value, null, 2));
+  // --meta emits the full record; otherwise just the value. -j/--json switches
+  // from pretty to compact (single-line) so the output drops straight into a
+  // pipe; it also suppresses the session banner (handled globally at the root).
+  const payload = opts.meta ? entry : entry.value;
+  console.log(JSON.stringify(payload, null, opts.json ? undefined : 2));
 }
 
 async function readValueArg(
