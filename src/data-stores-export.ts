@@ -10,8 +10,9 @@ import { type DataStoreEntry } from './data-stores-records.ts';
 import { openSession } from './session.ts';
 
 interface EntriesListResult {
-  data: DataStoreEntry[];
+  entries: DataStoreEntry[];
   total: number;
+  hasMore?: boolean;
 }
 
 /**
@@ -38,9 +39,9 @@ export async function fetchAllEntries(
       client,
       `/data-stores/tables/${encodeURIComponent(tableName)}?${params.toString()}`,
     );
-    const page = res.data ?? [];
+    const page = res.entries ?? [];
     all.push(...page);
-    if (page.length < pageSize) break;
+    if (!(res.hasMore ?? page.length === pageSize)) break;
     offset += pageSize;
   }
   return all.length > limit ? all.slice(0, limit) : all;

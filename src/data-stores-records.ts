@@ -22,8 +22,9 @@ export interface DataStoreEntry {
 }
 
 interface EntriesListResult {
-  data: DataStoreEntry[];
+  entries: DataStoreEntry[];
   total: number;
+  hasMore?: boolean;
 }
 
 async function fetchEntries(
@@ -57,10 +58,10 @@ async function fetchEntries(
       client,
       `/data-stores/tables/${encodeURIComponent(tableName)}?${params.toString()}`,
     );
-    const page = res.data ?? [];
+    const page = res.entries ?? [];
     all.push(...page);
-    if (page.length < pageSize) break;
     if (!opts.all) break;
+    if (!(res.hasMore ?? page.length === pageSize)) break;
     offset += pageSize;
   }
   return opts.limit && !opts.all ? all.slice(0, opts.limit) : all;
