@@ -445,12 +445,20 @@ const workflowsRun = new Command()
       'like the real /w/... endpoint) or execution (the step-keyed output, filtered by --show/--hide).',
     { default: 'webhook' as const },
   )
-  .option('--show <ids:string>', 'Comma-separated step IDs to include in the output (--respond-as execution only).', {
-    collect: true,
-  })
-  .option('--hide <ids:string>', 'Comma-separated step IDs to exclude from the output (--respond-as execution only).', {
-    collect: true,
-  })
+  .option(
+    '--show <ids:string>',
+    'Comma-separated step IDs to include in the output (--respond-as execution only).',
+    {
+      collect: true,
+    },
+  )
+  .option(
+    '--hide <ids:string>',
+    'Comma-separated step IDs to exclude from the output (--respond-as execution only).',
+    {
+      collect: true,
+    },
+  )
   .option('--timeout <seconds:number>', 'Client-side timeout (sync mode only).')
   .option(
     '--save-trace <path:string>',
