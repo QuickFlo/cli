@@ -2210,7 +2210,7 @@ const dsImport = new Command()
   });
 
 const dsExport = new Command()
-  .description('Export a table\'s entries as JSON (default), NDJSON, or CSV.')
+  .description("Export a table's entries as JSON (default), NDJSON, or CSV.")
   .arguments('<table:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
