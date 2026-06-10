@@ -33,6 +33,7 @@ interface WorkflowListResponse {
 
 interface ExecuteRequestBody {
   name: string;
+  workflowId: string;
   initial: Record<string, unknown>;
   steps: unknown[];
   environment?: string;
@@ -198,6 +199,9 @@ export async function runWorkflowsRun(opts: WorkflowsRunOptions): Promise<void> 
   const initial = readInput(opts);
   const body: ExecuteRequestBody = {
     name: wf.name,
+    // Link the trace back to the stored workflow so the executions UI can
+    // open it in the builder (otherwise the trace persists workflowId='unknown').
+    workflowId: wf.id,
     initial: { ...(wf.definition?.initial ?? {}), ...initial },
     steps: wf.definition?.steps ?? [],
   };
