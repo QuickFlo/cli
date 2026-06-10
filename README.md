@@ -384,9 +384,12 @@ quickflo data-stores tables list
 quickflo data-stores tables create cli-test
 quickflo data-stores tables delete cli-test --yes
 
-# Records
+# Records — list paginates; use --all / --limit to control how much comes back
+quickflo data-stores list cli-test                         # first page only (default 100)
+quickflo data-stores list cli-test --all                   # walk every page
 quickflo data-stores list cli-test --prefix user:
 quickflo data-stores list cli-test --filter status:active --sort updatedAt --desc
+quickflo data-stores list cli-test -j                      # full untruncated values as JSON
 quickflo data-stores get cli-test user:abc                 # prints value JSON
 quickflo data-stores get cli-test user:abc --meta          # full record + timestamps
 
@@ -396,13 +399,18 @@ quickflo data-stores set cli-test session:xyz '{}' --ttl 3600
 
 quickflo data-stores delete cli-test user:abc --yes
 
-# Round-trip
+# Round-trip / export — export takes the same query flags as list (prefix/filter/sort/limit)
 quickflo data-stores import cli-test -f ./seed.json        # batched in chunks of 500
-quickflo data-stores export cli-test --out ./snapshot.json
+quickflo data-stores export cli-test --out ./snapshot.json # JSON array (default), all pages
+quickflo data-stores export cli-test --format ndjson       # one {key,value} per line
+quickflo data-stores export cli-test --format csv          # key,value columns (value is JSON)
+quickflo data-stores export cli-test --filter kind:bulk --out ./subset.json
 ```
 
 Import accepts either `[{key, value}, …]` or an object map `{key: value, …}`.
-Export always emits the array form.
+Export defaults to the JSON array form (`--format json`); `ndjson` and `json`
+round-trip back through `import`, while `csv` is for spreadsheets/inspection.
+Unlike `list`, `export` always paginates the full result set.
 
 ## Package lifecycle
 

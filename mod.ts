@@ -2210,15 +2210,34 @@ const dsImport = new Command()
   });
 
 const dsExport = new Command()
-  .description('Export all entries from a table as a JSON array.')
+  .description('Export a table\'s entries as JSON (default), NDJSON, or CSV.')
   .arguments('<table:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('--out <path:string>', 'Write to a file (default: stdout)')
+  .option('--format <fmt:string>', 'Output format: json | ndjson | csv', { default: 'json' })
+  .option('--prefix <s:string>', 'Only export keys with this prefix')
+  .option('--filter <expr:string>', 'JSONB filter: field:value or field:=value. Repeatable.', {
+    collect: true,
+  })
+  .option('--sort <field:string>', 'Sort field: key | createdAt | updatedAt (default: key)')
+  .option('--desc', 'Sort descending', { default: false })
+  .option('--limit <n:number>', 'Cap how many entries are exported (default: all)')
   .action(async (opts, table) => {
+    const format = opts.format.toLowerCase();
+    if (format !== 'json' && format !== 'ndjson' && format !== 'csv') {
+      console.error(`Invalid --format "${opts.format}" (expected json | ndjson | csv)`);
+      Deno.exit(2);
+    }
     await runDataStoresExport({
       tableName: table,
       output: opts.out,
+      format,
+      prefix: opts.prefix,
+      filter: opts.filter,
+      sort: opts.sort,
+      desc: opts.desc,
+      limit: opts.limit,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
     });

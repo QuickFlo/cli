@@ -104,11 +104,39 @@ The path `*` is the any-field search (the UI's `*:somesearch`) → server `$cont
 quickflo connections   list|get|create|update|pull|push|delete|test|types
 quickflo environments  list|get|create|update|pull|push|delete | set <env> <k> <v> | unset <env> <k> | vars <env>
 quickflo triggers      list|get|create|update|delete|enable|disable|pull|push|rotate-secret|duplicate   # list --workflow scopes to one wf
-quickflo data-stores   tables … | list <table> | get <table> <key> [--meta] | set <table> <key> [value] | delete <table> <key> | import <table> | export <table>
+quickflo data-stores   tables … | list <table> [query…] | get <table> <key> [--meta] | set <table> <key> [value] | delete <table> <key> | import <table> | export <table> [query…]
 quickflo packages      list|list-versions|install|uninstall|upgrade|download|publish|init   # upgrade is plan/apply (preview, then --apply)
 quickflo microapp      new <name> | stripe-sync [config]
 quickflo backup        [-o <org>] [-d <dir>] [--dry-run] [--mask] [--include-packages] [--data-store-limit N]   # pull entire org to one folder
 ```
+
+### data-stores — querying, paginating, and exporting entries
+
+`tables list` shows a **KEYS** count per table from server-side metadata; `list <table>` reads the actual entries. Both **paginate** — a single request returns at most one page, so always reach for the pagination/query flags rather than assuming the first page is the whole table:
+
+```bash
+quickflo data-stores tables list                          # catalog + KEYS count per table
+quickflo data-stores list <table>                         # first page only (default 100)
+quickflo data-stores list <table> --all                   # walk every page to the end
+quickflo data-stores list <table> --limit 500             # cap results
+quickflo data-stores list <table> --prefix user:          # keys starting with "user:"
+quickflo data-stores list <table> --filter status:active  # JSONB value filter (repeatable, AND-ed)
+quickflo data-stores list <table> --sort updatedAt --desc # sort by key|createdAt|updatedAt
+quickflo data-stores list <table> -j                      # full untruncated values as JSON
+```
+
+The table view truncates each value to 80 chars; use `-j/--json` (or `export`) to get the full value. `--filter` is a server-side JSONB predicate — `field:value` for equality, repeat the flag to AND multiple conditions.
+
+**Export** the same data (with the **same query flags** — `--prefix`, `--filter`, `--sort`/`--desc`, `--limit` — all flow through, and it always paginates the full result set):
+
+```bash
+quickflo data-stores export <table>                       # JSON array of {key,value} (default), all pages
+quickflo data-stores export <table> --format ndjson       # one {key,value} per line (stream/grep-friendly)
+quickflo data-stores export <table> --format csv          # key,value columns (value column is JSON)
+quickflo data-stores export <table> --filter kind:bulk --out dump.json   # filtered, written to a file
+```
+
+The `json`/`ndjson` shapes round-trip back through `data-stores import <table>`. For very large tables, prefer `export --out <file>` (or `--limit`) over dumping inline.
 
 ### mcp — MCP server for agent hosts
 
