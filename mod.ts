@@ -90,6 +90,7 @@ import { runWorkflowsExecutionsCancel } from './src/workflows-executions-cancel.
 import { runWorkflowsExecutionsDelete } from './src/workflows-executions-delete.ts';
 import { runWorkflowsExecutionsRestore } from './src/workflows-executions-restore.ts';
 import { runWorkflowsValidate } from './src/workflows-validate.ts';
+import { runLogsFacets, runLogsSearch } from './src/logs.ts';
 import { runMcp } from './src/mcp.ts';
 import { runSkillInstall } from './src/skill-install.ts';
 import { runWorkflowsStepsGet, runWorkflowsStepsList } from './src/workflows-steps.ts';
@@ -2359,6 +2360,233 @@ const mcp = new Command()
     await runMcp();
   });
 
+// Raw cliffy opts for the logs commands. Extracting the shared options into a
+// helper erases cliffy's per-flag type inference, so the action casts to this
+// known shape (the option names below are the source of truth).
+interface RawLogsOpts {
+  org?: string;
+  apiUrl?: string;
+  source?: string[];
+  level?: string[];
+  channel?: string[];
+  provider?: string[];
+  origin?: string[];
+  tag?: string[];
+  workflow?: string;
+  execution?: string;
+  connection?: string;
+  connectionName?: string;
+  trigger?: string;
+  instance?: string;
+  id?: string;
+  search?: string[];
+  data?: string[];
+  since?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  all?: boolean;
+  follow?: boolean;
+  interval?: number;
+  timeout?: number;
+  json?: boolean;
+}
+
+// Shared facet/filter flags inlined on each command (cliffy accumulates option
+// types through the fluent chain, so they cannot be factored into a helper
+// without erasing inference). Repeatable flags also accept comma-separated
+// values (`--level warn,error`). Keep the two lists in sync.
+const logsSearch = new Command()
+  .description(
+    'Query the unified log stream (workflow logs, step errors, connection failures, ' +
+      'trigger firings, audit). Same facets as the Logs explorer UI. Table to stdout, ' +
+      'counts to stderr; -j emits raw entries.',
+  )
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option(
+    '--source <s:string>',
+    'Filter by source (workflow|connection|trigger|audit|event-receiver|integration-sync). Repeatable / CSV.',
+    { collect: true },
+  )
+  .option('--level <l:string>', 'Filter by level (debug|info|warn|error). Repeatable / CSV.', {
+    collect: true,
+  })
+  .option('--channel <c:string>', 'Filter by channel. Repeatable / CSV.', { collect: true })
+  .option('--provider <p:string>', 'Filter by provider. Repeatable / CSV.', { collect: true })
+  .option('--origin <o:string>', 'Filter by origin (core.log|engine). Repeatable / CSV.', {
+    collect: true,
+  })
+  .option(
+    '--tag <t:string>',
+    'Filter to logs from workflows carrying any of these tags. Repeatable / CSV.',
+    {
+      collect: true,
+    },
+  )
+  .option('--workflow <id:string>', 'Exact workflowId.')
+  .option('--execution <id:string>', 'Exact executionId.')
+  .option('--connection <id:string>', 'Exact connectionId.')
+  .option('--connection-name <name:string>', 'Exact connection name.')
+  .option('--trigger <id:string>', 'Exact triggerId.')
+  .option('--instance <id:string>', 'Exact instanceId (event receiver / sync instance).')
+  .option('--id <id:string>', 'Exact log row id (the synthesized hex), to deep-link one entry.')
+  .option(
+    '--search <term:string>',
+    'Case-insensitive message substring (AND across terms). Repeatable.',
+    {
+      collect: true,
+    },
+  )
+  .option('--data <expr:string>', 'Filter on a top-level data key: <path>:<value>. Repeatable.', {
+    collect: true,
+  })
+  .option(
+    '--since <duration:string>',
+    'Only logs within the last <duration> (e.g. 30m, 2h, 1d). Shorthand for --from.',
+  )
+  .option('--from <iso:string>', 'Window start (ISO-8601). Overrides --since.')
+  .option('--to <iso:string>', 'Window end (ISO-8601).')
+  .option('--limit <n:number>', 'Page size (default 200, max 1000).')
+  .option('--all', 'Paginate older pages until exhausted (uses the timestamp cursor).', {
+    default: false,
+  })
+  .option('-f, --follow', 'Live tail: poll for new entries and stream them (tail -f style).', {
+    default: false,
+  })
+  .option('--interval <seconds:number>', 'Poll interval for --follow (default 4, min 1).')
+  .option('--timeout <seconds:number>', 'With --follow, stop after <seconds> (exit 124).')
+  .option('-j, --json', 'Emit JSON instead of a table (one entry per line under --follow).', {
+    default: false,
+  })
+  .example(
+    'Errors across the platform in the last hour',
+    'quickflo logs search --level error --since 1h',
+  )
+  .example('Live-tail a workflow’s logs', 'quickflo logs search --workflow <id> --follow')
+  .example(
+    'Why a connection keeps failing',
+    'quickflo logs search --connection <id> --level error,warn -j',
+  )
+  .action(async (raw) => {
+    const opts = raw as unknown as RawLogsOpts;
+    await runLogsSearch({
+      source: opts.source,
+      level: opts.level,
+      channel: opts.channel,
+      provider: opts.provider,
+      origin: opts.origin,
+      tag: opts.tag,
+      workflow: opts.workflow,
+      execution: opts.execution,
+      connection: opts.connection,
+      connectionName: opts.connectionName,
+      trigger: opts.trigger,
+      instance: opts.instance,
+      id: opts.id,
+      search: opts.search,
+      data: opts.data,
+      since: opts.since,
+      from: opts.from,
+      to: opts.to,
+      limit: opts.limit,
+      all: opts.all,
+      follow: opts.follow,
+      interval: opts.interval,
+      timeout: opts.timeout,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const logsFacets = new Command()
+  .description(
+    'Show facet counts (source / level / channel / provider / origin / tags) for the ' +
+      'current filter + window. Use it to discover the filter space before drilling in. -j emits the raw facets object.',
+  )
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option(
+    '--source <s:string>',
+    'Filter by source (workflow|connection|trigger|audit|event-receiver|integration-sync). Repeatable / CSV.',
+    { collect: true },
+  )
+  .option('--level <l:string>', 'Filter by level (debug|info|warn|error). Repeatable / CSV.', {
+    collect: true,
+  })
+  .option('--channel <c:string>', 'Filter by channel. Repeatable / CSV.', { collect: true })
+  .option('--provider <p:string>', 'Filter by provider. Repeatable / CSV.', { collect: true })
+  .option('--origin <o:string>', 'Filter by origin (core.log|engine). Repeatable / CSV.', {
+    collect: true,
+  })
+  .option(
+    '--tag <t:string>',
+    'Filter to logs from workflows carrying any of these tags. Repeatable / CSV.',
+    {
+      collect: true,
+    },
+  )
+  .option('--workflow <id:string>', 'Exact workflowId.')
+  .option('--execution <id:string>', 'Exact executionId.')
+  .option('--connection <id:string>', 'Exact connectionId.')
+  .option('--connection-name <name:string>', 'Exact connection name.')
+  .option('--trigger <id:string>', 'Exact triggerId.')
+  .option('--instance <id:string>', 'Exact instanceId (event receiver / sync instance).')
+  .option('--id <id:string>', 'Exact log row id (the synthesized hex), to deep-link one entry.')
+  .option(
+    '--search <term:string>',
+    'Case-insensitive message substring (AND across terms). Repeatable.',
+    {
+      collect: true,
+    },
+  )
+  .option('--data <expr:string>', 'Filter on a top-level data key: <path>:<value>. Repeatable.', {
+    collect: true,
+  })
+  .option(
+    '--since <duration:string>',
+    'Only logs within the last <duration> (e.g. 30m, 2h, 1d). Shorthand for --from.',
+  )
+  .option('--from <iso:string>', 'Window start (ISO-8601). Overrides --since.')
+  .option('--to <iso:string>', 'Window end (ISO-8601).')
+  .option('-j, --json', 'Emit the raw facets object as JSON.', { default: false })
+  .example('What is logging in the last day', 'quickflo logs facets --since 1d')
+  .action(async (raw) => {
+    const opts = raw as unknown as RawLogsOpts;
+    await runLogsFacets({
+      source: opts.source,
+      level: opts.level,
+      channel: opts.channel,
+      provider: opts.provider,
+      origin: opts.origin,
+      tag: opts.tag,
+      workflow: opts.workflow,
+      execution: opts.execution,
+      connection: opts.connection,
+      connectionName: opts.connectionName,
+      trigger: opts.trigger,
+      instance: opts.instance,
+      id: opts.id,
+      search: opts.search,
+      data: opts.data,
+      since: opts.since,
+      from: opts.from,
+      to: opts.to,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const logs = new Command()
+  .description('Query and tail the platform log stream (the Logs explorer surface).')
+  .action(function () {
+    this.showHelp();
+  })
+  .command('search', logsSearch)
+  .command('facets', logsFacets);
+
 try {
   await new Command()
     .name('quickflo')
@@ -2375,6 +2603,7 @@ try {
     .command('environments', environments)
     .command('triggers', triggers)
     .command('data-stores', dataStores)
+    .command('logs', logs)
     .command('backup', backup)
     .command('mcp', mcp)
     .command('skill', skill)

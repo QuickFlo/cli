@@ -39,7 +39,7 @@ Because a PAT is bound to its org, **`-o`/`QF_ORG` is usually unnecessary** — 
 
 ## Command map
 
-Top-level groups: `auth · workflows · packages · microapp · connections · environments · triggers · data-stores · backup · mcp`.
+Top-level groups: `auth · workflows · packages · microapp · connections · environments · triggers · data-stores · logs · backup · mcp`.
 
 ### workflows — the core surface
 ```bash
@@ -141,6 +141,66 @@ quickflo data-stores export <table> --filter kind:bulk --out dump.json   # filte
 ```
 
 The `json`/`ndjson` shapes round-trip back through `data-stores import <table>`. For very large tables, prefer `export --out <file>` (or `--limit`) over dumping inline.
+
+### logs — the observability surface
+
+`logs` is the **unified, cross-resource log stream** — the terminal port of the Logs explorer UI. It is the one place that fuses signals that otherwise live in different subsystems:
+
+- **workflow logs** — every `core.log` step output, plus engine step-error lines (`source:workflow`)
+- **connection failures** — auth/refresh/test errors on a connection (`source:connection`)
+- **trigger firings** — why a trigger did or didn't fire, with its channel (`source:trigger`)
+- **event-receiver / integration-sync** — listener + sync activity (`source:event-receiver`, `source:integration-sync`)
+- **audit** — privileged member/security events (`source:audit`)
+
+**When to reach for `logs` vs `executions`.** `executions logs <id>` gives you **one step's output inside one run** (the trace view). `logs` is the **horizontal** view: "every error across every workflow in the last hour", "why has this *connection* been failing all week (across whichever workflows use it)", "did this *trigger* fire", "tail the platform live while I reproduce a bug". Use `executions` to debug a known run; use `logs` to find which run (or which connection/trigger) is the problem in the first place — then pivot into `executions` with the `executionId` the log line carries.
+
+```bash
+quickflo logs search [filters…] [--since 1h|--from <iso> --to <iso>] [--limit 200] [--all] [-f/--follow [--interval 4] [--timeout <s>]] [-j]
+quickflo logs facets [filters…] [--since 1d] [-j]    # counts per source/level/channel/provider/origin/tag — discover the filter space
+```
+
+**Filters (all repeatable; repeatable flags also accept CSV, e.g. `--level warn,error`):**
+`--source · --level · --channel · --provider · --origin · --tag` (the facet rail) and the exact-match correlators `--workflow · --execution · --connection · --connection-name · --trigger · --instance · --id`. Free text: `--search <term>` (case-insensitive message substring, AND across terms). Structured: `--data <path>:<value>` (matches a top-level key of the log's `data` column, e.g. `--data status:500`).
+
+**Discover before you drill.** Don't guess channel/provider/tag values — run `logs facets` first to see what actually exists in the window, then narrow:
+
+```bash
+quickflo logs facets --since 1d -j | jq '.channel, .provider'   # what's even logging?
+quickflo logs search --channel five9-supervisor --level error --since 1d -j
+```
+
+**Live tail (`-f/--follow`).** Polls on an interval (default 4s, matching the UI) and streams only new rows in chronological order (`tail -f` style, newest at the bottom — the opposite of the UI's newest-on-top). Any filter set composes with it. `--timeout <s>` caps the run (exit 124); Ctrl-C (130) is the usual stop. Under `-j`, follow emits one JSON object per line (NDJSON) — pipe straight into `jq`.
+
+```bash
+# Tail one workflow's logs live while you reproduce
+quickflo logs search --workflow <id> --follow
+# Tail every error on the platform, as NDJSON, for 5 minutes
+quickflo logs search --level error --follow --timeout 300 -j | jq -r '.timestamp + "  " + .message'
+```
+
+**Redaction.** Sensitive values are masked server-side; a masked field lists its path in the row's `redactedPaths`. The audited click-to-reveal is **not** exposed in the CLI — reveal a value from the Logs UI when you genuinely need it.
+
+**Recipes.**
+```bash
+# Errors across the whole platform in the last hour (triage entry point)
+quickflo logs search --level error --since 1h
+
+# Why is a connection failing — across every workflow that uses it
+quickflo logs search --connection <connectionId> --level error,warn --since 7d -j \
+  | jq -r '.[] | "\(.timestamp)\t\(.workflowName)\t\(.message)"'
+
+# Did this trigger fire? (trigger firings are their own source)
+quickflo logs search --source trigger --trigger <triggerId> --since 1d
+
+# Pivot a log line into the full run trace
+EID=$(quickflo logs search --workflow <id> --level error --since 1d --limit 1 -j | jq -r '.[0].executionId')
+quickflo workflows executions download "$EID" --out /tmp/qf-$EID.json   # then jq the trace
+
+# Find logs whose structured data carries an HTTP 500
+quickflo logs search --data status:500 --since 1d -j
+```
+
+The JSON shape per entry is the log row: `timestamp, source, level, channel, origin, message, data, tags, redactedPaths` plus the correlators (`workflowId, workflowName, executionId, stepId, connectionId, connectionName, provider, triggerId, instanceId`) and, for audit rows, `actorUserId, actorType, action, resourceType, resourceId`. Confirm the shape from a sample before writing deep `jq`.
 
 ### mcp — MCP server for agent hosts
 
