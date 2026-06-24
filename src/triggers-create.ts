@@ -74,12 +74,14 @@ function applyWebhookSecret(
   body: Record<string, unknown>,
   secret: string,
 ): void {
-  const config = (body['config'] && typeof body['config'] === 'object'
-    ? body['config']
-    : (body['config'] = {})) as Record<string, unknown>;
-  const webhook = (config['webhook'] && typeof config['webhook'] === 'object'
-    ? config['webhook']
-    : (config['webhook'] = {})) as Record<string, unknown>;
+  const config =
+    (body['config'] && typeof body['config'] === 'object'
+      ? body['config']
+      : (body['config'] = {})) as Record<string, unknown>;
+  const webhook =
+    (config['webhook'] && typeof config['webhook'] === 'object'
+      ? config['webhook']
+      : (config['webhook'] = {})) as Record<string, unknown>;
   webhook['secret'] = secret;
 }
 
