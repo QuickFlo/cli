@@ -1858,12 +1858,17 @@ const triggersCreate = new Command()
   .option('--type <kind:triggerType>', 'Trigger type (required unless --from-file)')
   .option('--name <text:string>', 'Trigger name')
   .option('--from-file <path:file>', 'JSON body for the trigger config')
+  .option(
+    '--secret <token:string>',
+    'Shared webhook secret (token auth). Omit to auto-generate; reuse the same value to share a token across endpoints.',
+  )
   .action(async (opts) => {
     await runTriggersCreate({
       workflow: opts.workflow,
       type: opts.type,
       name: opts.name,
       fromFile: opts.fromFile,
+      secret: opts.secret,
       by: opts.by,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
@@ -1881,6 +1886,10 @@ const triggersUpdate = new Command()
   .option('--name <text:string>', 'New name')
   .option('--enabled <bool:string>', 'true | false')
   .option('--from-file <path:file>', 'JSON body to merge (typically the `config` block)')
+  .option(
+    '--secret <token:string>',
+    'Set the shared webhook secret (token auth). Reuse the same value to share a token across endpoints.',
+  )
   .action(async (opts, ref) => {
     await runTriggersUpdate({
       ref,
@@ -1889,6 +1898,7 @@ const triggersUpdate = new Command()
       name: opts.name,
       enabled: opts.enabled,
       fromFile: opts.fromFile,
+      secret: opts.secret,
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
     });

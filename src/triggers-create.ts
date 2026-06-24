@@ -54,9 +54,33 @@ export interface TriggersCreateOptions {
   type?: TriggerType;
   name?: string;
   fromFile?: string;
+  /**
+   * Shared secret for token-auth webhooks. Sets `config.webhook.secret`
+   * (overriding any value from --from-file). Omit to let the backend
+   * auto-generate one. Reuse the same value across triggers to share a token.
+   */
+  secret?: string;
   by?: Lookup;
   apiUrl?: string;
   orgId?: string;
+}
+
+/**
+ * Force `config.webhook.secret = secret` on the payload, creating the nested
+ * `config.webhook` objects as needed. Used for the `--secret` override so it
+ * works for both the minimal and --from-file paths.
+ */
+function applyWebhookSecret(
+  body: Record<string, unknown>,
+  secret: string,
+): void {
+  const config = (body['config'] && typeof body['config'] === 'object'
+    ? body['config']
+    : (body['config'] = {})) as Record<string, unknown>;
+  const webhook = (config['webhook'] && typeof config['webhook'] === 'object'
+    ? config['webhook']
+    : (config['webhook'] = {})) as Record<string, unknown>;
+  webhook['secret'] = secret;
 }
 
 export async function runTriggersCreate(
@@ -76,6 +100,11 @@ export async function runTriggersCreate(
       throw new Error('--type is required when --from-file is not provided');
     }
     body = buildMinimalPayload(opts.type, opts.name);
+  }
+
+  // --secret sets the shared webhook token, overriding any --from-file value.
+  if (opts.secret !== undefined) {
+    applyWebhookSecret(body, opts.secret);
   }
 
   const trigger = await apiFetch<Record<string, unknown>>(
