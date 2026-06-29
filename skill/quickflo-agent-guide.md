@@ -39,7 +39,7 @@ Because a PAT is bound to its org, **`-o`/`QF_ORG` is usually unnecessary** — 
 
 ## Command map
 
-Top-level groups: `auth · workflows · packages · microapp · connections · environments · triggers · data-stores · logs · backup · mcp`.
+Top-level groups: `auth · workflows · packages · microapp · connections · environments · triggers · data-stores · dashboards · logs · backup · mcp`.
 
 ### workflows — the core surface
 ```bash
@@ -106,6 +106,7 @@ quickflo connections   list|get|create|update|pull|push|delete|test|types
 quickflo environments  list|get|create|update|pull|push|delete | set <env> <k> <v> | unset <env> <k> | vars <env>
 quickflo triggers      list|get|create|update|delete|enable|disable|pull|push|rotate-secret|duplicate   # list --workflow scopes to one wf
 quickflo data-stores   tables … | list <table> [query…] | get <table> <key> [--meta] | set <table> <key> [value] | delete <table> <key> | import <table> | export <table> [query…]
+quickflo dashboards    list|get|create|update|delete|pull|push|export|import|query|meta | sources list|get|create|update|delete|refresh|sync|distinct
 quickflo packages      list|list-versions|install|uninstall|upgrade|download|publish|init   # upgrade is plan/apply (preview, then --apply)
 quickflo microapp      new <name> | stripe-sync [config]
 quickflo backup        [-o <org>] [-d <dir>] [--dry-run] [--mask] [--include-packages] [--data-store-limit N]   # pull entire org to one folder
@@ -141,6 +142,34 @@ quickflo data-stores export <table> --filter kind:bulk --out dump.json   # filte
 ```
 
 The `json`/`ndjson` shapes round-trip back through `data-stores import <table>`. For very large tables, prefer `export --out <file>` (or `--limit`) over dumping inline.
+
+### dashboards — authoring, round-trip, and querying BI
+
+Three layers: dashboard CRUD, **data sources** (the schema layer widgets point at), and **analytics queries** (what every widget runs). To author a dashboard correctly you almost always need the source schema first — a widget references a `dataSourceId` plus field names, so discover valid fields with `meta`/`sources get`, then verify the query returns rows before saving.
+
+```bash
+# Discover the schema layer first
+quickflo dashboards sources list                          # sources + dim/measure counts
+quickflo dashboards meta                                  # every measure + dimension, with the ds_<uuid> alias
+quickflo dashboards sources distinct <src> <dimension>    # valid filter values for a dimension
+
+# Verify data the way a widget would (auto-prefixes bare fields with --source's alias)
+quickflo dashboards query -s "Workflow Executions" -m count
+quickflo dashboards query -s "Workflow Executions" -m durationMsAvg -d status \
+  --filter status:eq:completed --time-dimension timestamp --granularity day --date-range "last 7 days"
+quickflo dashboards query -f ./query.json --raw           # full AnalyticsQuery body; result incl. annotation
+
+# Round-trip a dashboard (same org): edit JSON, push back
+quickflo dashboards pull -d ./dashboards                  # self-contained per-dashboard JSON, real ids
+quickflo dashboards push -d ./dashboards --dry-run        # widgets reconcile by id; non-UUID widget id = create
+quickflo dashboards push -d ./dashboards
+
+# Move a dashboard across orgs (sources remapped by name)
+quickflo dashboards export "Ops Overview" --out ./ops.json
+quickflo dashboards import -f ./ops.json --map ds-0="Calls" --dry-run
+```
+
+`pull`/`push` are same-org and keep real ids — a widget with a UUID `id` updates in place, any non-UUID `id` (e.g. `"conversion-card"`) creates a new widget and is wired into the layout, and widgets removed from the file are deleted. Referenced data sources must already exist (`--create-missing-sources` recreates embedded defs). For cross-org, use `export`/`import`, which rewrite source ids to stable export ids and map them back by name. Read + query need `dashboards:view`; create/update/delete and source mutations need `dashboards:admin`.
 
 ### logs — the observability surface
 

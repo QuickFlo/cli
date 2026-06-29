@@ -6,8 +6,8 @@
  * `apiFetch`, or the shared `saveWorkflow` helper. No validation/schema logic
  * lives here — the server is the source of truth (mirrors the CLI).
  *
- * Tools: list_steps, get_step_schema, list_connections (read/introspect),
- * validate_workflow (the compiler), save_workflow_draft (persist as a draft —
+ * Tools: list_steps, get_step_schema, list_connections, resolve_step_options
+ * (read/introspect), validate_workflow (the compiler), save_workflow_draft (persist as a draft —
  * NO triggers, NO execution). The MCP host's per-call approval is the
  * guardrail on the one mutating tool.
  *
@@ -42,6 +42,9 @@ const SERVER_INSTRUCTIONS =
   'Loop: discover steps (list_steps / get_step_schema) → write the definition → ' +
   'validate_workflow after every edit, fix until ok → save_workflow_draft ' +
   '(creates a draft; no triggers, no execution).\n' +
+  'When get_step_schema shows a field has an "x-options-fetcher" (dynamic options, e.g. the ' +
+  "analytics steps' dashboard/widget/field), call resolve_step_options to fetch real ids " +
+  'instead of guessing — resolve parents first and pass them in params for dependent fields.\n' +
   'Read the `quickflo://agent-guide` resource for the full operating guide (auth, ' +
   'execution debugging, search-attribute filtering) and `quickflo://building-workflows` ' +
   'for the authoring guide (LiquidJS, step output fields, the tool-workflow contract).\n' +
@@ -129,6 +132,42 @@ function normalizeSteps(res: StepInfo[] | { steps?: StepInfo[]; data?: StepInfo[
   return res.steps ?? res.data ?? [];
 }
 
+/**
+ * Walk a step's JSON Schema to find the `x-options-fetcher` endpoint for a named
+ * field. Searches top-level properties first, then recurses into nested objects
+ * and array `items` (so a filter-row field like `filters[].field` is found by
+ * its bare name). Returns the first match. Mirrors the server's AI-builder tool.
+ */
+export function findFieldOptionsFetcher(
+  schema: unknown,
+  fieldName: string,
+): { endpoint: string } | null {
+  if (!schema || typeof schema !== 'object') return null;
+  const node = schema as Record<string, unknown>;
+  const props = node['properties'];
+  if (props && typeof props === 'object') {
+    const propsRec = props as Record<string, unknown>;
+    const target = propsRec[fieldName];
+    if (target && typeof target === 'object') {
+      const fetcher = (target as Record<string, unknown>)['x-options-fetcher'];
+      if (fetcher && typeof fetcher === 'object') {
+        const endpoint = (fetcher as Record<string, unknown>)['endpoint'];
+        if (typeof endpoint === 'string') return { endpoint };
+      }
+    }
+    for (const key of Object.keys(propsRec)) {
+      const found = findFieldOptionsFetcher(propsRec[key], fieldName);
+      if (found) return found;
+    }
+  }
+  const items = node['items'];
+  if (items) {
+    const found = findFieldOptionsFetcher(items, fieldName);
+    if (found) return found;
+  }
+  return null;
+}
+
 // --- tool definitions (JSON Schema; no zod import → no version skew) ---
 const TOOLS = [
   {
@@ -173,6 +212,35 @@ const TOOLS = [
         type: { type: 'string', description: 'Filter by connection type (e.g. smtp, five9).' },
         org: { type: 'string' },
       },
+    },
+  },
+  {
+    name: 'resolve_step_options',
+    description:
+      'Resolve the real, selectable options for a step field whose values come from a dynamic source ' +
+      '(get_step_schema shows it has an "x-options-fetcher"). Call this after get_step_schema whenever a ' +
+      "field has dynamic options, so you reference REAL ids instead of guessing — e.g. the analytics steps' " +
+      'dashboard, widget, and filter field. For dependent fields, pass parent selections in params: resolve ' +
+      '"dashboard" first, then "widget" with params { dashboard: "<id>" }, then a filter "field" with params ' +
+      '{ widget: "<id>" }. Returns { items: [{ value, label, description }], hint? }; value is the id/ref to use.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        stepType: { type: 'string', description: 'The step type, e.g. "analytics.query".' },
+        field: {
+          type: 'string',
+          description:
+            'The field whose options to resolve, e.g. "dashboard", "widget", or a filter-row "field".',
+        },
+        params: {
+          type: 'object',
+          description:
+            'Values for fields this one depends on, e.g. { dashboard: "<id>" } when resolving "widget".',
+          additionalProperties: { type: 'string' },
+        },
+        org: { type: 'string' },
+      },
+      required: ['stepType', 'field'],
     },
   },
   {
@@ -269,6 +337,44 @@ async function handleTool(
       const type = argString(args, 'type');
       if (type) rows = rows.filter((c) => c.type === type);
       return rows.map((c) => ({ name: c.name, type: c.type }));
+    }
+    case 'resolve_step_options': {
+      const stepType = argString(args, 'stepType');
+      if (!stepType) throw new Error('stepType is required.');
+      const field = argString(args, 'field');
+      if (!field) throw new Error('field is required.');
+      const client = getClient(argString(args, 'org'));
+      const res = await apiFetch<StepInfo[] | { steps?: StepInfo[]; data?: StepInfo[] }>(
+        client,
+        '/workflows/steps/info',
+      );
+      const step = normalizeSteps(res).find((s) => s.stepType === stepType);
+      if (!step) throw new Error(`Unknown step type "${stepType}".`);
+      const fetcher = findFieldOptionsFetcher(step.inputSchema, field);
+      if (!fetcher) {
+        throw new Error(
+          `Field "${field}" on ${stepType} has no dynamic options (no x-options-fetcher). Fill it directly from the schema.`,
+        );
+      }
+      // The schema endpoint is server-absolute ("/api/step-options/..."); apiUrl
+      // already carries the "/api" prefix, so strip the leading segment.
+      const path = fetcher.endpoint.replace(/^\/api(?=\/|$)/, '');
+      const search = new URLSearchParams();
+      const rawParams = args?.['params'];
+      if (rawParams && typeof rawParams === 'object') {
+        for (const [k, v] of Object.entries(rawParams as Record<string, unknown>)) {
+          if (typeof v === 'string' && v.length > 0) search.set(k, v);
+        }
+      }
+      const qs = search.toString();
+      const result = await apiFetch<{ items?: unknown[]; hint?: string }>(
+        client,
+        qs ? `${path}?${qs}` : path,
+      );
+      return {
+        items: result.items ?? [],
+        ...(result.hint ? { hint: result.hint } : {}),
+      };
     }
     case 'validate_workflow': {
       const definition = args?.['definition'];

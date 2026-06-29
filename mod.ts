@@ -77,6 +77,25 @@ import {
 import { runDataStoresImport } from './src/data-stores-import.ts';
 import { runBackup } from './src/backup.ts';
 import { runDataStoresExport } from './src/data-stores-export.ts';
+import { runDashboardsList } from './src/dashboards-list.ts';
+import { runDashboardsGet } from './src/dashboards-get.ts';
+import { runDashboardsCreate, runDashboardsUpdate } from './src/dashboards-save.ts';
+import { runDashboardsDelete } from './src/dashboards-delete.ts';
+import { runDashboardsPull } from './src/dashboards-pull.ts';
+import { runDashboardsPush } from './src/dashboards-push.ts';
+import { runDashboardsExport } from './src/dashboards-export.ts';
+import { runDashboardsImport } from './src/dashboards-import.ts';
+import { runDashboardsMeta, runDashboardsQuery } from './src/dashboards-query.ts';
+import {
+  runSourcesCreate,
+  runSourcesDelete,
+  runSourcesDistinct,
+  runSourcesGet,
+  runSourcesList,
+  runSourcesRefresh,
+  runSourcesSync,
+  runSourcesUpdate,
+} from './src/dashboards-sources.ts';
 import { setQuiet } from './src/log.ts';
 import { printError } from './src/errors.ts';
 import { runWorkflowsRun } from './src/workflows-run.ts';
@@ -2289,6 +2308,353 @@ const dataStores = new Command()
   .command('import', dsImport)
   .command('export', dsExport);
 
+// ─── Dashboards ────────────────────────────────────────────────────────────
+
+const orgOpt = (cmd: Command) =>
+  cmd
+    .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+    .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)');
+
+const dashboardsList = orgOpt(new Command())
+  .description('List dashboards (org-owned by default).')
+  .option('-n, --name <substr:string>', 'Substring match on dashboard name')
+  .option('--include-packages', 'Include dashboards installed from packages', { default: false })
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts) => {
+    await runDashboardsList({
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      name: opts.name,
+      includePackages: opts.includePackages,
+      json: opts.json,
+    });
+  });
+
+const dashboardsGet = orgOpt(new Command())
+  .description('Get one dashboard (with widgets) by UUID or name.')
+  .arguments('<ref:string>')
+  .option('--sources', 'Embed referenced data-source definitions', { default: false })
+  .action(async (opts, ref) => {
+    await runDashboardsGet({
+      ref,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      sources: opts.sources,
+    });
+  });
+
+const dashboardsCreate = orgOpt(new Command())
+  .description('Create a dashboard (metadata only; add widgets via push).')
+  .arguments('<name:string>')
+  .option('--description <text:string>', 'Dashboard description')
+  .option('--timezone <tz:string>', 'IANA timezone (e.g. America/Los_Angeles)')
+  .option('--default', 'Make this the org default dashboard', { default: undefined })
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts, name) => {
+    await runDashboardsCreate({
+      name,
+      description: opts.description,
+      timezone: opts.timezone,
+      default: opts.default,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const dashboardsUpdate = orgOpt(new Command())
+  .description('Update dashboard metadata (name/description/timezone/default).')
+  .arguments('<ref:string>')
+  .option('--name <name:string>', 'New name')
+  .option('--description <text:string>', 'New description')
+  .option('--timezone <tz:string>', 'New IANA timezone')
+  .option('--default', 'Make this the org default dashboard', { default: undefined })
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts, ref) => {
+    await runDashboardsUpdate({
+      ref,
+      name: opts.name,
+      description: opts.description,
+      timezone: opts.timezone,
+      default: opts.default,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const dashboardsDelete = orgOpt(new Command())
+  .description('Delete a dashboard and all its widgets by UUID or name.')
+  .arguments('<ref:string>')
+  .option('-y, --yes', 'Skip confirmation', { default: false })
+  .action(async (opts, ref) => {
+    await runDashboardsDelete({
+      ref,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      yes: opts.yes,
+    });
+  });
+
+const dashboardsPull = orgOpt(new Command())
+  .description('Download dashboards to a local dir as native JSON (round-trips with push).')
+  .option('-d, --dir <path:file>', 'Destination directory', { default: './dashboards' })
+  .option('-n, --name <substr:string>', 'Substring match on dashboard name')
+  .option('--include-packages', 'Include package-installed dashboards', { default: false })
+  .option('--force', 'Overwrite local files that differ', { default: false })
+  .option('--dry-run', 'Print the plan without writing', { default: false })
+  .action(async (opts) => {
+    await runDashboardsPull({
+      dir: opts.dir,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      name: opts.name,
+      includePackages: opts.includePackages,
+      force: opts.force,
+      dryRun: opts.dryRun,
+    });
+  });
+
+const dashboardsPush = orgOpt(new Command())
+  .description('Upsert dashboards from a directory of native JSON files (same-org round-trip).')
+  .option('-d, --dir <path:file>', 'Directory of dashboard JSON files', { default: './dashboards' })
+  .option('--create-missing-sources', 'Recreate embedded data sources absent from the org', {
+    default: false,
+  })
+  .option('--dry-run', 'Print the plan without making changes', { default: false })
+  .action(async (opts) => {
+    await runDashboardsPush({
+      dir: opts.dir,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      createMissingSources: opts.createMissingSources,
+      dryRun: opts.dryRun,
+    });
+  });
+
+const dashboardsExport = orgOpt(new Command())
+  .description('Export a dashboard to the portable (cross-org) JSON format.')
+  .arguments('<ref:string>')
+  .option('--out <path:file>', 'Write to a file instead of stdout')
+  .action(async (opts, ref) => {
+    await runDashboardsExport({
+      ref,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      out: opts.out,
+    });
+  });
+
+const dashboardsImport = orgOpt(new Command())
+  .description('Import a portable dashboard export into this org (auto-maps sources by name).')
+  .option('-f, --file <path:file>', 'Portable export JSON file', { required: true })
+  .option('--name <name:string>', 'Override the imported dashboard name')
+  .option('--map <pair:string>', 'Map a source: <exportId|name>=<source-ref>. Repeatable.', {
+    collect: true,
+  })
+  .option('--dry-run', 'Resolve mappings without importing', { default: false })
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts) => {
+    await runDashboardsImport({
+      file: opts.file,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      name: opts.name,
+      map: opts.map,
+      dryRun: opts.dryRun,
+      json: opts.json,
+    });
+  });
+
+const dashboardsQuery = orgOpt(new Command())
+  .description('Run an analytics query (what a widget runs). Verify data before saving widgets.')
+  .option('-f, --file <path:file>', 'Query JSON file (AnalyticsQuery or { query })')
+  .option('-s, --source <ref:string>', 'Data source (UUID or name); auto-prefixes bare field names')
+  .option('-m, --measure <field:string>', 'Measure field. Repeatable.', { collect: true })
+  .option('-d, --dimension <field:string>', 'Dimension field. Repeatable.', { collect: true })
+  .option(
+    '--filter <expr:string>',
+    'Filter field:op[:value] (eq,ne,contains,gt,gte,lt,lte,set,notset). Repeatable.',
+    {
+      collect: true,
+    },
+  )
+  .option('--time-dimension <field:string>', 'Time dimension field')
+  .option('--granularity <g:string>', 'Time granularity (15min,30min,hour,day,week,month,year)')
+  .option('--date-range <range:string>', 'Date range (e.g. "last 7 days")')
+  .option('--order <spec:string>', 'Order field[:asc|desc], comma-separated')
+  .option('--limit <n:number>', 'Row limit')
+  .option('--timezone <tz:string>', 'IANA timezone')
+  .option('--raw', 'Print the full result (annotation + echo), not just rows', { default: false })
+  .action(async (opts) => {
+    await runDashboardsQuery({
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      file: opts.file,
+      source: opts.source,
+      measure: opts.measure,
+      dimension: opts.dimension,
+      filter: opts.filter,
+      timeDimension: opts.timeDimension,
+      granularity: opts.granularity,
+      dateRange: opts.dateRange,
+      order: opts.order,
+      limit: opts.limit,
+      timezone: opts.timezone,
+      raw: opts.raw,
+    });
+  });
+
+const dashboardsMeta = orgOpt(new Command())
+  .description('List available measures and dimensions per data source.')
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts) => {
+    await runDashboardsMeta({
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+// Data-source subgroup
+
+const sourcesList = orgOpt(new Command())
+  .description('List dashboard data sources.')
+  .option('--include-packages', 'Include package-installed sources', { default: false })
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts) => {
+    await runSourcesList({
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      includePackages: opts.includePackages,
+      json: opts.json,
+    });
+  });
+
+const sourcesGet = orgOpt(new Command())
+  .description('Get one data source (UUID or name), full record.')
+  .arguments('<ref:string>')
+  .action(async (opts, ref) => {
+    await runSourcesGet({
+      ref,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const sourcesCreate = orgOpt(new Command())
+  .description('Create a data source from a JSON body (createDataSource shape).')
+  .option('-f, --file <path:file>', 'Data source JSON file', { required: true })
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts) => {
+    await runSourcesCreate({
+      file: opts.file,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const sourcesUpdate = orgOpt(new Command())
+  .description('Update a data source from a JSON body.')
+  .arguments('<ref:string>')
+  .option('-f, --file <path:file>', 'Data source JSON file', { required: true })
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts, ref) => {
+    await runSourcesUpdate({
+      ref,
+      file: opts.file,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const sourcesDelete = orgOpt(new Command())
+  .description('Delete a data source by UUID or name.')
+  .arguments('<ref:string>')
+  .option('-y, --yes', 'Skip confirmation', { default: false })
+  .action(async (opts, ref) => {
+    await runSourcesDelete({
+      ref,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      yes: opts.yes,
+    });
+  });
+
+const sourcesRefresh = orgOpt(new Command())
+  .description('Re-sample a data source schema from its underlying table.')
+  .arguments('<ref:string>')
+  .action(async (opts, ref) => {
+    await runSourcesRefresh({
+      ref,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+    });
+  });
+
+const sourcesSync = orgOpt(new Command())
+  .description("Trigger a data source's sync workflow.")
+  .arguments('<ref:string>')
+  .option('--start-date <date:string>', 'Sync window start')
+  .option('--end-date <date:string>', 'Sync window end')
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts, ref) => {
+    await runSourcesSync({
+      ref,
+      startDate: opts.startDate,
+      endDate: opts.endDate,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const sourcesDistinct = orgOpt(new Command())
+  .description('List distinct values for a dimension (filter options).')
+  .arguments('<ref:string> <dimension:string>')
+  .option('--search <term:string>', 'Filter values by substring')
+  .option('--limit <n:number>', 'Max values')
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts, ref, dimension) => {
+    await runSourcesDistinct({
+      ref,
+      dimension,
+      search: opts.search,
+      limit: opts.limit,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const dashboardSources = new Command()
+  .description('Manage and introspect dashboard data sources.')
+  .command('list', sourcesList)
+  .command('get', sourcesGet)
+  .command('create', sourcesCreate)
+  .command('update', sourcesUpdate)
+  .command('delete', sourcesDelete)
+  .command('refresh', sourcesRefresh)
+  .command('sync', sourcesSync)
+  .command('distinct', sourcesDistinct);
+
+const dashboards = new Command()
+  .description('Manage dashboards, data sources, and analytics queries.')
+  .command('list', dashboardsList)
+  .command('get', dashboardsGet)
+  .command('create', dashboardsCreate)
+  .command('update', dashboardsUpdate)
+  .command('delete', dashboardsDelete)
+  .command('pull', dashboardsPull)
+  .command('push', dashboardsPush)
+  .command('export', dashboardsExport)
+  .command('import', dashboardsImport)
+  .command('query', dashboardsQuery)
+  .command('meta', dashboardsMeta)
+  .command('sources', dashboardSources);
+
 // ─── Backup ──────────────────────────────────────────────────────────────────
 
 const backup = new Command()
@@ -2613,6 +2979,7 @@ try {
     .command('environments', environments)
     .command('triggers', triggers)
     .command('data-stores', dataStores)
+    .command('dashboards', dashboards)
     .command('logs', logs)
     .command('backup', backup)
     .command('mcp', mcp)

@@ -413,6 +413,69 @@ Export defaults to the JSON array form (`--format json`); `ndjson` and `json`
 round-trip back through `import`, while `csv` is for spreadsheets/inspection.
 Unlike `list`, `export` always paginates the full result set.
 
+## Dashboards
+
+Full dashboard management: CRUD, native round-trip, portable cross-org
+export/import, data-source management, and direct analytics queries. Built so an
+agent harness can author, verify, and operate dashboards end to end.
+
+```bash
+# CRUD
+quickflo dashboards list                                   # org-owned dashboards
+quickflo dashboards list --include-packages -j             # include package installs, as JSON
+quickflo dashboards get "Ops Overview"                     # full dashboard + widgets (UUID or name)
+quickflo dashboards get "Ops Overview" --sources           # also embed referenced data-source defs
+quickflo dashboards create "Ops Overview" --timezone America/Los_Angeles
+quickflo dashboards update "Ops Overview" --description "Q3 ops" --default
+quickflo dashboards delete "Ops Overview" --yes
+
+# Native pull/push — real ids, same-org round-trip (no source remapping)
+quickflo dashboards pull -d ./dashboards                   # one self-contained JSON per dashboard
+quickflo dashboards push -d ./dashboards --dry-run         # reconcile widgets + layout by id
+quickflo dashboards push -d ./dashboards                   # PATCH meta, create/update/delete widgets, save layout
+
+# Portable export/import — cross-org (alias-rewritten, maps sources by name)
+quickflo dashboards export "Ops Overview" --out ./ops.json
+quickflo dashboards import -f ./ops.json --name "Ops (staging)"
+quickflo dashboards import -f ./ops.json --map ds-0="Calls" --dry-run
+
+# Data sources — the schema layer widgets reference
+quickflo dashboards sources list
+quickflo dashboards sources get "Workflow Executions"      # full record incl. recordSchema
+quickflo dashboards sources create -f ./source.json
+quickflo dashboards sources update <id> -f ./source.json
+quickflo dashboards sources refresh <id>                   # re-sample the underlying table's schema
+quickflo dashboards sources sync <id>                      # trigger the source's sync workflow
+quickflo dashboards sources distinct <id> region           # filter values for a dimension
+quickflo dashboards sources delete <id> --yes
+
+# Query — run exactly what a widget runs, to verify data before saving
+quickflo dashboards meta                                   # measures + dimensions per source
+quickflo dashboards query --source "Workflow Executions" --measure count
+quickflo dashboards query -s "Workflow Executions" -m durationMsAvg -d status \
+  --filter status:eq:completed --time-dimension timestamp --granularity day \
+  --date-range "last 7 days" --limit 100
+quickflo dashboards query -f ./query.json --raw             # raw AnalyticsQuery body; full result
+```
+
+`pull`/`push` are the same-org loop: edit a pulled JSON and push it back,
+widgets reconcile by `id` (a UUID updates in place; any non-UUID id — e.g.
+`"id": "conversion-card"` — creates a new widget and is mapped into the layout),
+and widgets dropped from the file are deleted. Data sources are referenced by id
+and must already exist; `--create-missing-sources` recreates embedded defs.
+
+`export`/`import` are the cross-org loop: real source ids and their `ds_<uuid>`
+query aliases are rewritten to stable export ids, and `import` maps them back
+onto this org's sources by name (override per source with `--map`). With
+`--source`, bare `--measure`/`--dimension` field names on `query` are
+auto-prefixed with that source's alias; refs that already carry a `ds_…` prefix
+pass through, so multi-source/join queries work too.
+
+> Reaching these endpoints with an access token requires the API to run the
+> dashboards controller under `UserOrAccessTokenGuard` (the same guard as
+> workflows/environments). `dashboards:view` covers read + query; create,
+> update, delete, and source mutations need `dashboards:admin`.
+
 ## Package lifecycle
 
 End-to-end loop with no UI round-trips:
