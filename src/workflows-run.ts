@@ -218,7 +218,7 @@ export async function runWorkflowsRun(opts: WorkflowsRunOptions): Promise<void> 
 
   const controller = new AbortController();
   const timeoutMs = opts.timeout !== undefined ? opts.timeout * 1000 : undefined;
-  let timer: number | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   if (timeoutMs !== undefined) {
     timer = setTimeout(() => controller.abort(), timeoutMs);
   }
