@@ -12,7 +12,8 @@ import { AGENT_GUIDE, BUILDING_WORKFLOWS } from './skill-guides.ts';
 const NAME = 'quickflo';
 const DESC = 'Drive the QuickFlo platform from the terminal with the `quickflo` command: ' +
   'inspect/run/validate workflows, tail and download executions, browse the step ' +
-  'catalog, and manage triggers, connections, environments, data-stores, and ' +
+  'catalog, build and query dashboards and their data sources (BI/analytics), and ' +
+  'manage triggers, connections, environments, data-stores, dashboards, and ' +
   'packages across orgs. Use whenever you need a local agent harness to work ' +
   'against a live QuickFlo org.';
 
