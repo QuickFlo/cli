@@ -222,7 +222,10 @@ const TOOLS = [
       "field has dynamic options, so you reference REAL ids instead of guessing — e.g. the analytics steps' " +
       'dashboard, widget, and filter field. For dependent fields, pass parent selections in params: resolve ' +
       '"dashboard" first, then "widget" with params { dashboard: "<id>" }, then a filter "field" with params ' +
-      '{ widget: "<id>" }. Returns { items: [{ value, label, description }], hint? }; value is the id/ref to use.',
+      '{ widget: "<id>" }. Returns { items: [{ value, label, description }], hint? }; value is the id/ref to use. ' +
+      "If the field's options depend on a connection that is an $env template (e.g. a TTS/LLM voice/model list " +
+      'whose connection is "{{ $env.OPENAI }}"), also pass `environment` (an environment name) so it resolves; ' +
+      'defaults to the QF_ENV env var.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -235,8 +238,15 @@ const TOOLS = [
         params: {
           type: 'object',
           description:
-            'Values for fields this one depends on, e.g. { dashboard: "<id>" } when resolving "widget".',
+            'Values for fields this one depends on, e.g. { dashboard: "<id>" } when resolving "widget", ' +
+            'or { provider: "openai", connection: "<name>" } for a TTS voice list.',
           additionalProperties: { type: 'string' },
+        },
+        environment: {
+          type: 'string',
+          description:
+            'Environment name used to resolve $env-templated connection names in the lookup. ' +
+            'Only needed when the field depends on such a connection. Defaults to QF_ENV.',
         },
         org: { type: 'string' },
       },
@@ -366,6 +376,11 @@ async function handleTool(
           if (typeof v === 'string' && v.length > 0) search.set(k, v);
         }
       }
+      // Mirror the UI options-fetcher: forward an environment name so the
+      // endpoint can resolve $env-templated connection names. Explicit arg
+      // wins; otherwise fall back to QF_ENV (like org falls back to QF_ORG).
+      const environment = argString(args, 'environment') || Deno.env.get('QF_ENV') || undefined;
+      if (environment && !search.has('environment')) search.set('environment', environment);
       const qs = search.toString();
       const result = await apiFetch<{ items?: unknown[]; hint?: string }>(
         client,
