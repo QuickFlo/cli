@@ -138,6 +138,10 @@ quickflo workflows get abcd > my-workflow.json              # save pushable shap
 quickflo workflows get 'My Workflow' --by name              # disambiguate
 quickflo workflows get abcd -j                              # raw API record
 
+# Delete (removes the workflow + its triggers + execution history)
+quickflo workflows delete 'My Workflow'                     # confirm prompt
+quickflo workflows delete abcd --yes                        # no prompt
+
 # Push (upsert every *.json in a directory)
 quickflo workflows push -d ./workflows
 quickflo workflows push -d ./workflows -w                   # + create webhook triggers

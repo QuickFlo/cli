@@ -20,6 +20,7 @@ import { runWorkflowsPush } from './src/workflows-push.ts';
 import { runWorkflowsPull } from './src/workflows-pull.ts';
 import { runWorkflowsList } from './src/workflows-list.ts';
 import { runWorkflowsGet } from './src/workflows-get.ts';
+import { runWorkflowsDelete } from './src/workflows-delete.ts';
 import { runPackagesList } from './src/packages-list.ts';
 import { runPackagesInstall } from './src/packages-install.ts';
 import { runPackagesPublish } from './src/packages-publish.ts';
@@ -436,6 +437,37 @@ const workflowsGet = new Command()
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
       json: opts.json,
+    });
+  });
+
+const workflowsDelete = new Command()
+  .description(
+    'Delete a workflow (and its triggers + execution history). Auto-detects UUID / name; force with --by.',
+  )
+  .type('by', byType)
+  .arguments('<ref:string>')
+  .option(
+    '-o, --org <suid:string>',
+    'Organization SUID or UUID (or set QF_ORG)',
+  )
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option(
+    '--by <kind:by>',
+    'Force lookup mode (id | suid | name). Default: auto-detect.',
+  )
+  .option('-y, --yes', 'Skip confirmation', { default: false })
+  .example('By name (default)', "quickflo workflows delete 'My Workflow' -o abcd")
+  .example(
+    'By UUID, no prompt',
+    'quickflo workflows delete 11111111-2222-3333-4444-555555555555 -o abcd --yes',
+  )
+  .action(async (opts, ref) => {
+    await runWorkflowsDelete({
+      ref,
+      by: opts.by,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      yes: opts.yes,
     });
   });
 
@@ -912,6 +944,7 @@ const workflows = new Command()
   .description('Workflow management commands.')
   .command('list', workflowsList)
   .command('get', workflowsGet)
+  .command('delete', workflowsDelete)
   .command('push', workflowsPush)
   .command('pull', workflowsPull)
   .command('run', workflowsRun)
