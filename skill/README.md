@@ -5,6 +5,7 @@ Teach any AI agent harness to drive QuickFlo. **One canonical source, thin per-h
 ## Canonical content (the single source of truth)
 - **`quickflo-agent-guide.md`** — the operating guide: command surface, auth/org rules, the write→validate→push loop, execution debugging, search-attribute filtering. Harness-neutral (no frontmatter, no harness-specific tokens).
 - **`building-workflows.md`** — the deep workflow-authoring guide (definition format, LiquidJS, tool-workflow contract).
+- **`building-dashboards.md`** — the deep dashboard-authoring guide (field refs, filtering, chart types, the verify→check→push loop, the silent-zero-rows traps).
 
 Edit these. Everything else is generated.
 

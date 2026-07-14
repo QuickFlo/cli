@@ -132,6 +132,27 @@ export async function fetchDataSources(
   );
 }
 
+/** The `ds_` query alias for a data source id (how every field ref names it). */
+export function dataSourceIdToAlias(id: string): string {
+  return `ds_${id.replace(/-/g, '_')}`;
+}
+
+/**
+ * Inverse of {@link dataSourceIdToAlias}: a `ds_<uuid-with-underscores>` alias
+ * back to the uuid the API expects. Anything that isn't an alias (a uuid, a
+ * name) passes through untouched, so this is safe to apply to any user ref.
+ */
+export function dataSourceAliasToId(ref: string): string {
+  if (!ref.startsWith('ds_')) return ref;
+  const withoutPrefix = ref.slice(3);
+  const hex = withoutPrefix.replace(/_/g, '');
+  if (hex.length === 32) {
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-` +
+      `${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  return withoutPrefix.replace(/_/g, '-');
+}
+
 /**
  * Resolve a dashboard `<ref>` (UUID or name) to its id. UUIDs hit the get
  * endpoint directly; names are matched against the org's dashboard list and

@@ -106,7 +106,7 @@ quickflo connections   list|get|create|update|pull|push|delete|test|types
 quickflo environments  list|get|create|update|pull|push|delete | set <env> <k> <v> | unset <env> <k> | vars <env>
 quickflo triggers      list|get|create|update|delete|enable|disable|pull|push|rotate-secret|duplicate   # list --workflow scopes to one wf
 quickflo data-stores   tables … | list <table> [query…] | get <table> <key> [--meta] | set <table> <key> [value] | delete <table> <key> | import <table> | export <table> [query…]
-quickflo dashboards    list|get|create|update|delete|pull|push|export|import|query|meta | sources list|get|create|update|delete|refresh|sync|distinct
+quickflo dashboards    list|get|create|update|delete|check|pull|push|export|import|query|meta | sources list|get|create|update|delete|refresh|sync|distinct
 quickflo packages      list|list-versions|install|uninstall|upgrade|download|publish|init   # upgrade is plan/apply (preview, then --apply)
 quickflo microapp      new <name> | stripe-sync [config]
 quickflo backup        [-o <org>] [-d <dir>] [--dry-run] [--mask] [--include-packages] [--data-store-limit N]   # pull entire org to one folder
@@ -146,6 +146,10 @@ The `json`/`ndjson` shapes round-trip back through `data-stores import <table>`.
 ### dashboards — authoring, round-trip, and querying BI
 
 Three layers: dashboard CRUD, **data sources** (the schema layer widgets point at), and **analytics queries** (what every widget runs). To author a dashboard correctly you almost always need the source schema first — a widget references a `dataSourceId` plus field names, so discover valid fields with `meta`/`sources get`, then verify the query returns rows before saving.
+
+When the task is to **author or modify a dashboard**, see the companion guide **`building-dashboards.md`** (shipped alongside this guide; also the `quickflo://building-dashboards` MCP resource). Read it first: the analytics engine **fails silently on a bad field ref** (a missing key reads as NULL/empty, so the widget matches zero rows and never errors), and the guide carries the traps that costs you — above all **exact value casing**, which no validator can catch for you.
+
+The loop there: **`sources distinct` any value you'll filter on → `dashboards query` to prove rows come back → `dashboards check <file> -j` (exit 3 = errors) → fix → `push --dry-run` → `push`.** `check` is the server-side typechecker for field refs; a query is the only thing that proves the widget is actually right. Zero rows is a failure, not a result.
 
 ```bash
 # Discover the schema layer first

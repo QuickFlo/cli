@@ -1,15 +1,23 @@
 /**
- * `quickflo mcp` — a stdio MCP server exposing QuickFlo's workflow-building
- * surface to any MCP host (Claude Code, Claude Desktop, Cursor).
+ * `quickflo mcp` — a stdio MCP server exposing QuickFlo's workflow- and
+ * dashboard-building surface to any MCP host (Claude Code, Claude Desktop,
+ * Cursor).
  *
  * THIN by design: every tool is one call to an existing HTTP endpoint via
  * `apiFetch`, or the shared `saveWorkflow` helper. No validation/schema logic
  * lives here — the server is the source of truth (mirrors the CLI).
  *
- * Tools: list_steps, get_step_schema, list_connections, resolve_step_options
- * (read/introspect), validate_workflow (the compiler), save_workflow_draft (persist as a draft —
- * NO triggers, NO execution). The MCP host's per-call approval is the
- * guardrail on the one mutating tool.
+ * Workflow tools: list_steps, get_step_schema, list_connections,
+ * resolve_step_options (read/introspect), validate_workflow (the compiler),
+ * save_workflow_draft (persist as a draft — NO triggers, NO execution).
+ *
+ * Dashboard tools: list_data_sources, get_data_source_schema,
+ * get_distinct_values, run_analytics_query (read/introspect), and
+ * validate_dashboard (the field-ref checker). All read-only: dashboards are
+ * written through the CLI's `dashboards push`, not from here.
+ *
+ * The MCP host's per-call approval is the guardrail on save_workflow_draft,
+ * still the only mutating tool.
  *
  * CRITICAL: MCP stdio uses STDOUT for JSON-RPC. Nothing in a tool path may
  * write to stdout. Auth is resolved ONCE at startup (banner/errors go to
@@ -29,8 +37,9 @@ import {
 import { colors } from '@cliffy/ansi/colors';
 import { type ApiClient, apiFetch, type ResolvedOrg, resolveOrganization } from './api.ts';
 import { probeToken, resolveSession } from './auth.ts';
+import { dataSourceAliasToId, dataSourceIdToAlias, fetchDataSources } from './dashboards-refs.ts';
 import { saveWorkflow, type WorkflowDefinition } from './workflows-save.ts';
-import { AGENT_GUIDE, BUILDING_WORKFLOWS } from './skill-guides.ts';
+import { AGENT_GUIDE, BUILDING_DASHBOARDS, BUILDING_WORKFLOWS } from './skill-guides.ts';
 
 const SERVER_NAME = 'quickflo';
 const SERVER_VERSION = '0.1.0';
@@ -38,16 +47,23 @@ const SERVER_VERSION = '0.1.0';
 // Concise, eager: shown to the model on connect. The full guides ride in
 // resources (on-demand), so this stays short.
 const SERVER_INSTRUCTIONS =
-  'QuickFlo workflow tools — build, validate, and save workflows from your host.\n' +
-  'Loop: discover steps (list_steps / get_step_schema) → write the definition → ' +
+  'QuickFlo tools — build, validate, and save workflows and dashboards from your host.\n' +
+  'Workflows loop: discover steps (list_steps / get_step_schema) → write the definition → ' +
   'validate_workflow after every edit, fix until ok → save_workflow_draft ' +
   '(creates a draft; no triggers, no execution).\n' +
+  'Dashboards loop: discover fields (list_data_sources / get_data_source_schema) → ' +
+  'get_distinct_values for any value you will filter on → run_analytics_query to prove the ' +
+  'query returns rows → validate_dashboard, fix until ok.\n' +
+  'The analytics engine fails SILENTLY on a bad field ref (a missing key reads as NULL/empty, ' +
+  'so the widget matches zero rows and never errors). Never invent a ds_ alias or field name, ' +
+  'and never trust a widget you have not queried.\n' +
   'When get_step_schema shows a field has an "x-options-fetcher" (dynamic options, e.g. the ' +
   "analytics steps' dashboard/widget/field), call resolve_step_options to fetch real ids " +
   'instead of guessing — resolve parents first and pass them in params for dependent fields.\n' +
   'Read the `quickflo://agent-guide` resource for the full operating guide (auth, ' +
-  'execution debugging, search-attribute filtering) and `quickflo://building-workflows` ' +
-  'for the authoring guide (LiquidJS, step output fields, the tool-workflow contract).\n' +
+  'execution debugging, search-attribute filtering), `quickflo://building-workflows` ' +
+  'for the workflow-authoring guide, and `quickflo://building-dashboards` for the ' +
+  'dashboard-authoring guide.\n' +
   'Validation warnings (e.g. a connection that does not exist yet) are advisory, not blocking.';
 
 // Embedded skill guides served as resources (see skill/bundle-guides.ts).
@@ -67,6 +83,14 @@ const RESOURCES = [
       'Deep guide for authoring/editing workflow JSON: definition format, LiquidJS, control flow, tool-workflow contract.',
     mimeType: 'text/markdown',
     text: BUILDING_WORKFLOWS,
+  },
+  {
+    uri: 'quickflo://building-dashboards',
+    name: 'QuickFlo dashboard-authoring guide',
+    description:
+      'Deep guide for authoring/editing dashboards: exact field refs, filtering (incl. the silently-dropped rows), chart types, the verify → check → push loop, and the value-casing trap that renders empty widgets.',
+    mimeType: 'text/markdown',
+    text: BUILDING_DASHBOARDS,
   },
 ];
 
@@ -286,6 +310,96 @@ const TOOLS = [
       required: ['definition'],
     },
   },
+
+  // --- dashboards / analytics ---
+  {
+    name: 'list_data_sources',
+    description:
+      "List the org's dashboard data sources: { id, name, alias, tableName, dimensionCount, measureCount }. The `alias` is the ds_ prefix every field ref uses. Start here when building or fixing a dashboard.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'get_data_source_schema',
+    description:
+      'Get the queryable field catalog: every measure and dimension with its EXACT ds_-prefixed reference name. The field segment is the literal schema key — spaces, underscores, and case included — so copy names from here character-for-character rather than guessing. Omit dataSourceId for all sources.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dataSourceId: {
+          type: 'string',
+          description: 'Data source id or ds_ alias. Omit for every source.',
+        },
+        org: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'get_distinct_values',
+    description:
+      "Get the real values of a dimension. Filter matching is EXACT: 'Outbound' will not match a stored 'OUTBOUND', and the engine reports no error — the widget just renders empty. Call this before filtering on ANY value you have not seen in query results. No validator can catch a wrong value for you.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dataSourceId: { type: 'string', description: 'Data source id or ds_ alias.' },
+        dimension: {
+          type: 'string',
+          description: 'Dimension ref, e.g. "ds_abc.CAMPAIGN TYPE" (or the bare field name).',
+        },
+        limit: { type: 'number', description: 'Max values to return.' },
+        org: { type: 'string' },
+      },
+      required: ['dataSourceId', 'dimension'],
+    },
+  },
+  {
+    name: 'run_analytics_query',
+    description:
+      'Execute an analytics query and return the rows — the same query a widget runs. Use it to (a) PROVE a widget config returns plausible rows before saving it and (b) answer data questions. Zero rows is a failure, not a result: suspect value casing, then the date range, then the field ref. Field refs use ds_ aliases from get_data_source_schema.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'object',
+          description:
+            'The analytics query (widget queryConfig shape): measures, dimensions, timeDimensions, filters, filterFormula, order, limit.',
+        },
+        org: { type: 'string' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'validate_dashboard',
+    description:
+      'Validate widget configs WITHOUT saving (the dashboard typechecker). Returns { ok, errors, warnings }: field refs that do not exist (with a "did you mean"), refs from a source the widget neither uses nor joins, unqualified refs, unknown ds_ aliases, filter rows missing a dimension. Run after every edit; fix until ok. It cannot catch a wrong VALUE — only run_analytics_query proves a widget is right.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        widgets: {
+          type: 'array',
+          description:
+            'Widgets to validate: { id?, title?, dataSourceId, queryConfig }. dataSourceId accepts a uuid or a ds_ alias.',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              title: { type: 'string' },
+              dataSourceId: { type: 'string' },
+              queryConfig: { type: 'object' },
+            },
+            required: ['dataSourceId', 'queryConfig'],
+          },
+        },
+        org: { type: 'string' },
+      },
+      required: ['widgets'],
+    },
+  },
 ];
 
 async function handleTool(
@@ -419,6 +533,85 @@ async function handleTool(
         validationWarnings: (workflow as { validationWarnings?: unknown }).validationWarnings ?? [],
       };
     }
+
+    // --- dashboards / analytics ---
+    case 'list_data_sources': {
+      const client = getClient(argString(args, 'org'));
+      const sources = await fetchDataSources(client);
+      return sources.map((d) => {
+        const fields = Object.values(d.recordSchema?.fields ?? {});
+        return {
+          id: d.id,
+          name: d.name,
+          alias: dataSourceIdToAlias(d.id),
+          tableName: d.dataStoreTableName,
+          dimensionCount: fields.length,
+          measureCount: fields.filter((f) => f.measure).length,
+          ...(d.servingEngine ? { servingEngine: d.servingEngine } : {}),
+        };
+      });
+    }
+    case 'get_data_source_schema': {
+      const client = getClient(argString(args, 'org'));
+      const meta = await apiFetch<Array<{ name: string }>>(
+        client,
+        '/dashboards/analytics/meta',
+      );
+      const ref = argString(args, 'dataSourceId');
+      if (!ref) return { sources: meta };
+      const alias = dataSourceIdToAlias(dataSourceAliasToId(ref));
+      const match = meta.filter((m) => m.name === alias);
+      if (match.length === 0) {
+        return {
+          error: `No data source with alias ${alias}. Available: ${
+            meta.map((m) => m.name).join(', ')
+          }`,
+        };
+      }
+      return { sources: match };
+    }
+    case 'get_distinct_values': {
+      const ref = argString(args, 'dataSourceId');
+      const dimension = argString(args, 'dimension');
+      if (!ref || !dimension) {
+        throw new Error('dataSourceId and dimension are required.');
+      }
+      const client = getClient(argString(args, 'org'));
+      const body: Record<string, unknown> = {
+        dataSourceId: dataSourceAliasToId(ref),
+        dimension,
+      };
+      const limit = args?.['limit'];
+      if (typeof limit === 'number') body['limit'] = limit;
+      return await apiFetch<{ values: string[] }>(
+        client,
+        '/dashboards/analytics/distinct-values',
+        { method: 'POST', body: JSON.stringify(body) },
+      );
+    }
+    case 'run_analytics_query': {
+      const query = args?.['query'];
+      if (!query || typeof query !== 'object') {
+        throw new Error('query (object) is required.');
+      }
+      const client = getClient(argString(args, 'org'));
+      return await apiFetch(client, '/dashboards/analytics/query', {
+        method: 'POST',
+        body: JSON.stringify({ query }),
+      });
+    }
+    case 'validate_dashboard': {
+      const widgets = args?.['widgets'];
+      if (!Array.isArray(widgets)) {
+        throw new Error('widgets (array) is required.');
+      }
+      const client = getClient(argString(args, 'org'));
+      return await apiFetch(client, '/dashboards/validate', {
+        method: 'POST',
+        body: JSON.stringify({ widgets }),
+      });
+    }
+
     default:
       throw new Error(`Unknown tool "${name}".`);
   }

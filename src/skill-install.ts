@@ -7,7 +7,7 @@
  * Diagnostics → stderr; only the `mcp` config snippet (the payload) → stdout.
  */
 
-import { AGENT_GUIDE, BUILDING_WORKFLOWS } from './skill-guides.ts';
+import { AGENT_GUIDE, BUILDING_DASHBOARDS, BUILDING_WORKFLOWS } from './skill-guides.ts';
 
 const NAME = 'quickflo';
 const DESC = 'Drive the QuickFlo platform from the terminal with the `quickflo` command: ' +
@@ -61,7 +61,10 @@ $ARGUMENTS
 `;
       await Deno.writeTextFile(`${dir}/SKILL.md`, skillMd);
       await Deno.writeTextFile(`${dir}/building-workflows.md`, BUILDING_WORKFLOWS);
-      console.error(`Installed Claude skill → ${dir}/{SKILL.md,building-workflows.md}`);
+      await Deno.writeTextFile(`${dir}/building-dashboards.md`, BUILDING_DASHBOARDS);
+      console.error(
+        `Installed Claude skill → ${dir}/{SKILL.md,building-workflows.md,building-dashboards.md}`,
+      );
       return;
     }
     case 'agents': {
@@ -69,8 +72,9 @@ $ARGUMENTS
       // AGENTS.md is eager (always-on); ship the operating guide and defer the
       // heavy authoring guide to on-demand.
       const content = '> QuickFlo operating guide (drive the platform via the `quickflo` CLI). ' +
-        'Deep workflow-authoring guide: the `quickflo://building-workflows` MCP ' +
-        'resource, or building-workflows.md in https://github.com/QuickFlo/cli.\n\n' +
+        'Deep authoring guides: the `quickflo://building-workflows` and ' +
+        '`quickflo://building-dashboards` MCP resources, or building-workflows.md / ' +
+        'building-dashboards.md in https://github.com/QuickFlo/cli.\n\n' +
         AGENT_GUIDE;
       await Deno.writeTextFile(out, content);
       console.error(
