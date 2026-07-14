@@ -86,6 +86,7 @@ import { runDashboardsPull } from './src/dashboards-pull.ts';
 import { runDashboardsPush } from './src/dashboards-push.ts';
 import { runDashboardsExport } from './src/dashboards-export.ts';
 import { runDashboardsImport } from './src/dashboards-import.ts';
+import { runDashboardsCheck } from './src/dashboards-check.ts';
 import { runDashboardsMeta, runDashboardsQuery } from './src/dashboards-query.ts';
 import {
   runSourcesCreate,
@@ -2673,6 +2674,42 @@ const dashboardSources = new Command()
   .command('sync', sourcesSync)
   .command('distinct', sourcesDistinct);
 
+const dashboardsCheck = orgOpt(new Command())
+  .alias('validate')
+  .description(
+    "Validate a dashboard file's widgets against the server without saving them.",
+  )
+  .arguments('[file:string]')
+  .option('--from-stdin', 'Read the dashboard JSON from stdin instead of a file.', {
+    default: false,
+  })
+  .option('--strict', 'Treat warnings as failures (non-zero exit).', {
+    default: false,
+  })
+  .option('-j, --json', 'Emit the { ok, errors, warnings } result as JSON.', {
+    default: false,
+  })
+  .example('Check a pulled file', 'quickflo dashboards check ./dashboards/ops.json -o abcd')
+  .example('Alias', 'quickflo dashboards validate ./dashboards/ops.json -o abcd')
+  .example(
+    'Pipe from stdin',
+    'cat ./ops.json | quickflo dashboards check --from-stdin -o abcd',
+  )
+  .example(
+    'Strict + JSON (agent loop)',
+    'quickflo dashboards check ./ops.json --strict -j -o abcd',
+  )
+  .action(async (opts, file) => {
+    await runDashboardsCheck({
+      source: file,
+      fromStdin: opts.fromStdin,
+      strict: opts.strict,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
 const dashboards = new Command()
   .description('Manage dashboards, data sources, and analytics queries.')
   .command('list', dashboardsList)
@@ -2680,6 +2717,7 @@ const dashboards = new Command()
   .command('create', dashboardsCreate)
   .command('update', dashboardsUpdate)
   .command('delete', dashboardsDelete)
+  .command('check', dashboardsCheck)
   .command('pull', dashboardsPull)
   .command('push', dashboardsPush)
   .command('export', dashboardsExport)

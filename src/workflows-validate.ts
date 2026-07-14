@@ -19,27 +19,22 @@ import { colors } from '@cliffy/ansi/colors';
 import { apiFetch } from './api.ts';
 import { openSession } from './session.ts';
 import { UserError, ValidationError } from './errors.ts';
+import {
+  validationFailed,
+  type ValidationIssueBase,
+  type ValidationResultBase,
+} from './validation-result.ts';
 
-export interface ValidationIssue {
-  ruleId: string;
-  severity: 'error' | 'warning';
-  message: string;
+export interface ValidationIssue extends ValidationIssueBase {
+  /** Step the issue is anchored to, if applicable. */
   stepId?: string;
 }
 
-export interface ValidationResult {
-  ok: boolean;
-  errors: ValidationIssue[];
-  warnings: ValidationIssue[];
-}
+export type ValidationResult = ValidationResultBase<ValidationIssue>;
 
-/** Pure: did validation fail, accounting for --strict (warnings count too)? */
-export function validationFailed(
-  result: ValidationResult,
-  strict: boolean,
-): boolean {
-  return result.errors.length > 0 || (strict && result.warnings.length > 0);
-}
+// Re-exported: the predicate is shared with `dashboards check` so --strict
+// means exactly one thing across both. Existing importers keep working.
+export { validationFailed };
 
 function readAllSync(reader: {
   readSync(p: Uint8Array): number | null;
