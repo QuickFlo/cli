@@ -98,6 +98,13 @@ import {
   runSourcesSync,
   runSourcesUpdate,
 } from './src/dashboards-sources.ts';
+import {
+  runCalcFieldDelete,
+  runCalcFieldSet,
+  runSourceFieldsList,
+  runWindowDimDelete,
+  runWindowDimSet,
+} from './src/dashboards-source-fields.ts';
 import { setQuiet } from './src/log.ts';
 import { printError } from './src/errors.ts';
 import { runWorkflowsRun } from './src/workflows-run.ts';
@@ -2487,6 +2494,10 @@ const dashboardsImport = orgOpt(new Command())
     collect: true,
   })
   .option('--dry-run', 'Resolve mappings without importing', { default: false })
+  .option(
+    '--no-sync-fields',
+    'Skip reconciling calculated fields / window dimensions onto mapped sources',
+  )
   .option('-j, --json', 'Emit JSON', { default: false })
   .action(async (opts) => {
     await runDashboardsImport({
@@ -2496,6 +2507,7 @@ const dashboardsImport = orgOpt(new Command())
       name: opts.name,
       map: opts.map,
       dryRun: opts.dryRun,
+      syncFields: opts.syncFields,
       json: opts.json,
     });
   });
@@ -2663,6 +2675,97 @@ const sourcesDistinct = orgOpt(new Command())
     });
   });
 
+const sourcesFields = orgOpt(new Command())
+  .description('List computed fields (calculated fields + window dimensions) on a source.')
+  .arguments('<ref:string>')
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts, ref) => {
+    await runSourceFieldsList({
+      ref,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const calcFieldSet = orgOpt(new Command())
+  .description('Create or update a calculated field by name (jsep formula; upsert).')
+  .arguments('<ref:string>')
+  .option(
+    '-f, --file <path:file>',
+    'Field JSON: {name, label, type, expression, formula?, measure?}',
+    {
+      required: true,
+    },
+  )
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts, ref) => {
+    await runCalcFieldSet({
+      ref,
+      file: opts.file,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const calcFieldDelete = orgOpt(new Command())
+  .description('Delete a calculated field by name.')
+  .arguments('<ref:string> <name:string>')
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts, ref, name) => {
+    await runCalcFieldDelete({
+      ref,
+      name,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const sourcesCalcField = new Command()
+  .description('Manage calculated fields on a data source (dedicated server routes).')
+  .command('set', calcFieldSet)
+  .command('delete', calcFieldDelete);
+
+const windowDimSet = orgOpt(new Command())
+  .description('Create or update a window dimension by name (row_number rank field; upsert).')
+  .arguments('<ref:string>')
+  .option(
+    '-f, --file <path:file>',
+    'Field JSON: {name, label, function: "row_number", partitionBy, orderBy, direction?, semantic?}',
+    { required: true },
+  )
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts, ref) => {
+    await runWindowDimSet({
+      ref,
+      file: opts.file,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const windowDimDelete = orgOpt(new Command())
+  .description('Delete a window dimension by name.')
+  .arguments('<ref:string> <name:string>')
+  .option('-j, --json', 'Emit JSON', { default: false })
+  .action(async (opts, ref, name) => {
+    await runWindowDimDelete({
+      ref,
+      name,
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
+const sourcesWindowDim = new Command()
+  .description('Manage window dimensions on a data source (ClickHouse-served sources only).')
+  .command('set', windowDimSet)
+  .command('delete', windowDimDelete);
+
 const dashboardSources = new Command()
   .description('Manage and introspect dashboard data sources.')
   .command('list', sourcesList)
@@ -2672,7 +2775,10 @@ const dashboardSources = new Command()
   .command('delete', sourcesDelete)
   .command('refresh', sourcesRefresh)
   .command('sync', sourcesSync)
-  .command('distinct', sourcesDistinct);
+  .command('distinct', sourcesDistinct)
+  .command('fields', sourcesFields)
+  .command('calc-field', sourcesCalcField)
+  .command('window-dim', sourcesWindowDim);
 
 const dashboardsCheck = orgOpt(new Command())
   .alias('validate')

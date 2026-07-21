@@ -79,6 +79,7 @@ export interface DataFeedField {
 }
 
 export interface CalculatedField {
+  id?: string;
   name: string;
   label: string;
   type: 'string' | 'number' | 'boolean' | 'date';
@@ -87,10 +88,27 @@ export interface CalculatedField {
   measure?: boolean;
 }
 
+/**
+ * Rank-within-group dimension (`row_number` over a partition), defined on the
+ * data source and referenced by `name` in widget queries — same binding model
+ * as calculated fields. ClickHouse-served sources only.
+ */
+export interface WindowDimension {
+  id?: string;
+  name: string;
+  label: string;
+  function: 'row_number';
+  partitionBy: string[];
+  orderBy: string;
+  direction?: 'asc' | 'desc';
+  semantic?: 'lifetime' | 'window-reset';
+}
+
 export interface DataFeedRecordSchema {
   name: string;
   fields: Record<string, DataFeedField>;
   calculatedFields?: CalculatedField[];
+  windowDimensions?: WindowDimension[];
 }
 
 export interface DashboardDataSource {

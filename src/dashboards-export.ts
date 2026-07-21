@@ -232,6 +232,15 @@ export function buildExportPayload(
               formula: cf.formula,
               measure: cf.measure,
             })),
+            windowDimensions: ds.recordSchema.windowDimensions?.map((wd) => ({
+              name: wd.name,
+              label: wd.label,
+              function: wd.function,
+              partitionBy: wd.partitionBy,
+              orderBy: wd.orderBy,
+              direction: wd.direction,
+              semantic: wd.semantic,
+            })),
           }
           : { name: 'Unknown', fields: {} },
       };

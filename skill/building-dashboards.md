@@ -27,6 +27,25 @@ Measures per source: `count`, `ratePerSecond` / `ratePerMinute` / `ratePerHour` 
 
 A dimension may carry an inline date bucket: `<field>:<bucket>` with `hourOfDay`, `dayOfWeek`, `day`, `month`, `quarter`, `year`, `15min`, `30min` (e.g. `ds_abc.recordTimestamp:hourOfDay`).
 
+## Computed fields live on the data source
+
+Two field families are defined on the **source**, not the widget, and widgets reference them **by name** through the `ds_` alias like any schema field:
+
+- **Calculated fields** — jsep formulas over schema fields, e.g. `IF(NOT(IN(DISPOSITION, $ds.data_mapping.dispositions.is_not_contact)), 1, 0)`. A `$ds.<table>.<key>.<field>` chain reads a data-store entry **in the querying org at query time** — the referenced table must exist in whatever org runs the widget, or the formula silently matches nothing.
+- **Window dimensions** — `row_number` rank fields (`{name, label, function: "row_number", partitionBy, orderBy, direction?, semantic?}`), e.g. "attempt # per DNIS". ClickHouse-served sources only.
+
+**The trap:** `sources update -f body.json` CANNOT write either family — the server accepts only `recordSchema.{name,fields}` and silently strips the rest (the CLI warns when your body contains them). They ride dedicated commands:
+
+```bash
+quickflo dashboards sources fields <src>                     # list both families (names, formulas, ids)
+quickflo dashboards sources calc-field set <src> -f f.json   # upsert by name: {name, label, type, expression, formula?, measure?}
+quickflo dashboards sources calc-field delete <src> <name>
+quickflo dashboards sources window-dim set <src> -f f.json   # upsert by name: {name, label, function, partitionBy, orderBy, ...}
+quickflo dashboards sources window-dim delete <src> <name>
+```
+
+**Cross-org:** `dashboards export` snapshots both families, and `dashboards import` reconciles them onto each mapped target source by name (create missing, update drifted, never delete) before creating the dashboard — so imported widget refs resolve. `--no-sync-fields` skips this; `--dry-run` previews it. Two things import cannot fix: a window dimension on a Postgres-served target is rejected (surfaced as a warning), and any `$ds.*` data-store table a formula reads must be populated in the target org yourself (`data-stores export`/`import`).
+
 ## The trap `check` cannot catch: value casing
 
 `check` validates that a **field** exists. It cannot know which **value** you meant — both are legal strings. Filter matching is exact, and casing is **per-source, not a platform convention**. The same conceptual field really does differ between sources in the same org:

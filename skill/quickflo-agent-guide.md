@@ -106,7 +106,7 @@ quickflo connections   list|get|create|update|pull|push|delete|test|types
 quickflo environments  list|get|create|update|pull|push|delete | set <env> <k> <v> | unset <env> <k> | vars <env>
 quickflo triggers      list|get|create|update|delete|enable|disable|pull|push|rotate-secret|duplicate   # list --workflow scopes to one wf
 quickflo data-stores   tables … | list <table> [query…] | get <table> <key> [--meta] | set <table> <key> [value] | delete <table> <key> | import <table> | export <table> [query…]
-quickflo dashboards    list|get|create|update|delete|check|pull|push|export|import|query|meta | sources list|get|create|update|delete|refresh|sync|distinct
+quickflo dashboards    list|get|create|update|delete|check|pull|push|export|import|query|meta | sources list|get|create|update|delete|refresh|sync|distinct|fields|calc-field|window-dim
 quickflo packages      list|list-versions|install|uninstall|upgrade|download|publish|init   # upgrade is plan/apply (preview, then --apply)
 quickflo microapp      new <name> | stripe-sync [config]
 quickflo backup        [-o <org>] [-d <dir>] [--dry-run] [--mask] [--include-packages] [--data-store-limit N]   # pull entire org to one folder
@@ -173,7 +173,7 @@ quickflo dashboards export "Ops Overview" --out ./ops.json
 quickflo dashboards import -f ./ops.json --map ds-0="Calls" --dry-run
 ```
 
-`pull`/`push` are same-org and keep real ids — a widget with a UUID `id` updates in place, any non-UUID `id` (e.g. `"conversion-card"`) creates a new widget and is wired into the layout, and widgets removed from the file are deleted. Referenced data sources must already exist (`--create-missing-sources` recreates embedded defs). For cross-org, use `export`/`import`, which rewrite source ids to stable export ids and map them back by name. Read + query need `dashboards:view`; create/update/delete and source mutations need `dashboards:admin`.
+`pull`/`push` are same-org and keep real ids — a widget with a UUID `id` updates in place, any non-UUID `id` (e.g. `"conversion-card"`) creates a new widget and is wired into the layout, and widgets removed from the file are deleted. Referenced data sources must already exist (`--create-missing-sources` recreates embedded defs). For cross-org, use `export`/`import`, which rewrite source ids to stable export ids and map them back by name; import also reconciles computed fields (calculated fields + window dimensions) onto each mapped target source by name (create missing, update drifted, never delete — `--no-sync-fields` to skip). Computed fields live on the SOURCE and ride dedicated subcommands (`sources fields` / `calc-field set|delete` / `window-dim set|delete`) — `sources update` cannot write them (the server strips `recordSchema.calculatedFields`/`windowDimensions`; the CLI warns). Read + query need `dashboards:view`; create/update/delete and source mutations need `dashboards:admin`.
 
 ### logs — the observability surface
 

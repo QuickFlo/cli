@@ -166,6 +166,24 @@ export async function runSourcesUpdate(
   const { client } = await openSession(opts, 'dashboards sources update');
   const ds = await resolveDataSourceRef(client, opts.ref);
   const body = await readJsonFile(opts.file);
+  // The server accepts recordSchema.{name,fields} only — computed fields ride
+  // dedicated routes. Warn instead of letting the strip pass silently.
+  const schema = body['recordSchema'] as Record<string, unknown> | undefined;
+  for (
+    const [key, cmd] of [
+      ['calculatedFields', 'calc-field set'],
+      ['windowDimensions', 'window-dim set'],
+    ] as const
+  ) {
+    if (schema && schema[key] !== undefined) {
+      console.error(
+        `${
+          colors.yellow('⚠')
+        } recordSchema.${key} is IGNORED by this endpoint — the server strips it. ` +
+          `Use "quickflo dashboards sources ${cmd} ${opts.ref} -f <field.json>" instead.`,
+      );
+    }
+  }
   const updated = await apiFetch<DashboardDataSource>(
     client,
     `/dashboards/data-sources/${ds.id}`,
