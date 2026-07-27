@@ -163,7 +163,9 @@ export async function runWorkflowsRun(opts: WorkflowsRunOptions): Promise<void> 
       console.log(JSON.stringify(queued, null, 2));
     } else {
       console.error(colors.dim(`status: ${queued.status}`));
-      console.error(colors.dim(`Tail with: quickflo workflows executions tail ${queued.executionId}`));
+      console.error(
+        colors.dim(`Tail with: quickflo workflows executions tail ${queued.executionId}`),
+      );
       console.log(queued.executionId);
     }
     return;
