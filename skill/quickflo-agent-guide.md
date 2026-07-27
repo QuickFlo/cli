@@ -245,7 +245,7 @@ The JSON shape per entry is the log row: `timestamp, source, level, channel, ori
 2. **Read before write.** Use `get`, `logs`, `executions get/list -j` to gather facts. Inspect workflow contents with `workflows get <ref>` (pushable JSON) and the step catalog with `workflows steps get <type> -j`.
 3. **Parse with jq.** e.g. `quickflo workflows executions list --status failed --since 1d -j | jq -r '.[] | "\(.id)\t\(.startedAt)\t\(.workflowName)"'`. (Confirm the exact JSON shape from a sample before writing brittle jq.)
 4. **Build/edit via the validate loop.** Authoring or changing a workflow JSON? Follow `building-workflows.md`: write → `quickflo workflows validate <file> -j` (exit 3 = errors) → fix → re-run until clean → `push`. Warnings (e.g. a missing connection) are advisory in the loop; add `--strict` only as a final gate. Never push an unvalidated definition.
-5. **Run deliberately.** Default `--mode sync` waits and returns the trace; `--mode async` queues and returns an `executionId` you can `tail`. Persist evidence with `--save-trace` / `--save-steps-to` when debugging. Use `--input-file`/`--input-stdin` for non-trivial input rather than cramming JSON into the shell.
+5. **Run deliberately.** `workflows run` queues the run onto the worker pool (same path as the UI's Run button) and by default waits for completion — streaming progress to stderr and exiting with the run's status. `--mode async` returns the `executionId` immediately (tail it later with `executions tail`). Print step outputs after completion with `--show <ids>` (`--show '*'` for all). Persist evidence with `--save-trace` / `--save-steps-to` when debugging. Use `--input-file`/`--input-stdin` for non-trivial input rather than cramming JSON into the shell.
 6. **Debug a failure** (common harness loop): `executions list --status failed --since <window> -j` → pick id → **download the trace to disk and `jq` it** (see "Working with traces" below) → fetch a specific failing step with `executions logs <id> --step <stepId>` if you need just one → `executions replay <id>` to reproduce after a fix.
 
 ## Working with traces (preferred pattern)
@@ -268,7 +268,7 @@ jq '.steps[] | select(.success==false) | {stepId, type, error, output}' "$T"
 jq '.steps[] | select(.stepId=="<id>") | .output | (if type=="array" then {len: length, first: .[0]} else . end)' "$T"
 ```
 
-Confirm the actual JSON shape from `jq 'keys'` / a small sample before writing deep `jq` paths — don't assume field names. For the same reason, prefer `--save-trace <path>` / `--save-steps-to <dir>` on `run`/`tail` (writing to `/tmp`) over piping a sync run's full trace through your context. `--save-steps-to` is ideal when you want one file per step to `jq` independently.
+Confirm the actual JSON shape from `jq 'keys'` / a small sample before writing deep `jq` paths — don't assume field names. For the same reason, prefer `--save-trace <path>` / `--save-steps-to <dir>` on `run`/`tail` (writing to `/tmp`) over printing large step outputs (`--show '*'`) into your context. `--save-steps-to` is ideal when you want one file per step to `jq` independently.
 
 ## Recipes
 

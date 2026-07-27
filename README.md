@@ -518,22 +518,22 @@ Close the **author → run → observe → fix** loop without leaving the termin
 ### Run a workflow manually
 
 ```bash
-# Sync: wait for the result, print per-step table + output JSON
-quickflo workflows run my-wf --input '{"x":1}' --mode sync
+# Default: queue the run, wait for completion, exit with the run's status
+quickflo workflows run my-wf --input '{"x":1}'
 
-# Async: queue + print just the executionId
+# Async: queue + print just the executionId (tail it later)
 quickflo workflows run my-wf --input-file ./payload.json --mode async
 
 # Override the environment used for variable resolution
 quickflo workflows run my-wf --env staging --input '{}'
 
-# Filter per-step output
+# Print selected step outputs after completion ('*' for all)
 quickflo workflows run my-wf --show fetchUsers,transform --input '{}'
 
-# CLI-side timeout (sync only). Exits 124 if exceeded.
+# Max seconds to wait for completion. Exits 124 if exceeded.
 quickflo workflows run my-wf --input '{}' --timeout 30
 
-# Persist the trace + one JSON file per step to disk on completion (sync)
+# Persist the trace + one JSON file per step to disk on completion
 quickflo workflows run my-wf --input '{}' \
   --save-trace ./trace.json --save-steps-to ./steps/
 ```
