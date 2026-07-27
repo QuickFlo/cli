@@ -1,11 +1,14 @@
 /**
- * `quickflo workflows run <ref>` — fire a manual execution against
- * /workflows/execute. The CLI fetches the workflow's stored definition,
- * merges in the user-supplied `initial` + `--env` override, and POSTs.
+ * `quickflo workflows run <ref>` — fire a manual execution the same way the
+ * UI's Run button does: POST /workflows/:id/execute?mode=async, which queues
+ * the run via QStash onto the worker pool (worker routing, tier limits,
+ * billing — identical to a UI manual run). The portal never executes the
+ * workflow in-process (bd-jx13).
  *
- * Sync mode prints a per-step table to stdout (with the result JSON
- * underneath); async mode prints the executionId so a follow-up
- * `quickflo workflows runs get <id>` can tail progress.
+ * Default ("sync") behavior queues then WAITS by polling the execution trace
+ * until terminal, reusing the `executions tail` loop — so exit codes, --json,
+ * --save-trace and --save-steps-to all behave like tail. `--mode async`
+ * queues and prints the executionId without waiting, as before.
  */
 
 import { colors } from '@cliffy/ansi/colors';
@@ -13,62 +16,12 @@ import { type ApiClient, apiFetch } from './api.ts';
 import { type Lookup } from './refs.ts';
 import { resolveWorkflowRef } from './workflow-refs.ts';
 import { openSession } from './session.ts';
-import { TimeoutError, UserError, ValidationError } from './errors.ts';
-import { saveSteps, saveTrace } from './trace-save.ts';
+import { UserError } from './errors.ts';
+import { tailExecution } from './workflows-executions-tail.ts';
 
-interface WorkflowRecord {
-  id: string;
-  suid?: string;
-  name: string;
-  definition?: {
-    steps?: unknown[];
-    initial?: Record<string, unknown>;
-    environment?: string;
-  };
-}
-
-interface WorkflowListResponse {
-  data: WorkflowRecord[];
-}
-
-interface ExecuteRequestBody {
-  name: string;
-  workflowId: string;
-  initial: Record<string, unknown>;
-  steps: unknown[];
-  environment?: string;
-}
-
-interface ExecuteStepResult {
-  stepId?: string;
-  status?: string;
-  durationMilliseconds?: number;
-  error?: { message?: string } | string;
-}
-
-interface ExecuteSyncResponse {
-  success: boolean;
-  executionId?: string;
-  output?: unknown;
-  error?: { message?: string } | string;
-  metadata?: { stepResults?: ExecuteStepResult[]; durationMilliseconds?: number };
-  metrics?: { durationMilliseconds?: number };
-}
-
-interface ExecuteAsyncResponse {
+interface ExecuteQueuedResponse {
   status: string;
   executionId: string;
-}
-
-async function fetchWorkflow(client: ApiClient, id: string): Promise<WorkflowRecord> {
-  const params = new URLSearchParams();
-  params.set('where[organizationId][$eq]', client.orgId);
-  params.set('where[id][$eq]', id);
-  params.set('options[limit]', '1');
-  const res = await apiFetch<WorkflowListResponse>(client, `/workflows?${params.toString()}`);
-  const wf = res.data?.[0];
-  if (!wf) throw new UserError(`Workflow ${id} not found in this organization.`);
-  return wf;
 }
 
 function readInput(opts: WorkflowsRunOptions): Record<string, unknown> {
@@ -122,53 +75,42 @@ function readAllSync(reader: { readSync(p: Uint8Array): number | null }): Uint8A
   return out;
 }
 
-function truncate(s: string, n: number): string {
-  return s.length <= n ? s : s.slice(0, n - 1) + '…';
-}
-
-function colorStatus(s: string): string {
-  if (s === 'success') return colors.green(s);
-  if (s === 'failed' || s === 'error') return colors.red(s);
-  if (s === 'cancelled') return colors.yellow(s);
-  if (s === 'running') return colors.cyan(s);
-  return s;
-}
-
-function printSync(name: string, res: ExecuteSyncResponse): void {
-  const duration = res.metrics?.durationMilliseconds ?? res.metadata?.durationMilliseconds;
-  console.log(colors.bold(`run: ${name}`));
-  console.log(`  success:     ${res.success ? colors.green('true') : colors.red('false')}`);
-  console.log(`  executionId: ${res.executionId ?? '—'}`);
-  console.log(`  duration:    ${duration !== undefined ? `${duration}ms` : '—'}`);
-  const steps = res.metadata?.stepResults ?? [];
-  if (steps.length > 0) {
-    const idWidth = Math.min(40, Math.max(4, ...steps.map((s) => (s.stepId ?? '—').length)));
-    const statusWidth = Math.min(10, Math.max(6, ...steps.map((s) => (s.status ?? '—').length)));
-    const header = [
-      'STEP'.padEnd(idWidth),
-      'STATUS'.padEnd(statusWidth),
-      'TIME'.padStart(7),
-      'ERROR',
-    ].join('  ');
-    console.log('');
-    console.log(colors.bold(header));
-    console.log(colors.dim('─'.repeat(header.length)));
-    for (const s of steps) {
-      const err = typeof s.error === 'string' ? s.error : (s.error?.message ?? '');
-      console.log([
-        truncate(s.stepId ?? '—', idWidth).padEnd(idWidth),
-        colorStatus(s.status ?? '—').padEnd(statusWidth + 10), // padEnd doesn't account for ANSI, but visually close
-        s.durationMilliseconds !== undefined
-          ? `${s.durationMilliseconds}ms`.padStart(7)
-          : '—'.padStart(7),
-        truncate(err, 60),
-      ].join('  '));
-    }
+/**
+ * Fetch and print step outputs for --show/--hide after the run completes.
+ * `show` entries may be comma-separated; '*' expands to every recorded step.
+ */
+async function printStepOutputs(
+  client: ApiClient,
+  executionId: string,
+  show: string[],
+  hide: string[] | undefined,
+  showSecrets: boolean | undefined,
+): Promise<void> {
+  const trace = await apiFetch<{ stepPaths?: Record<string, string> }>(
+    client,
+    `/execution-traces/${executionId}`,
+  );
+  const all = Object.keys(trace.stepPaths ?? {});
+  const showIds = show.flatMap((s) => s.split(',')).map((s) => s.trim()).filter(Boolean);
+  const hideIds = new Set(
+    (hide ?? []).flatMap((s) => s.split(',')).map((s) => s.trim()).filter(Boolean),
+  );
+  const wanted = (showIds.includes('*') ? all : all.filter((id) => showIds.includes(id)))
+    .filter((id) => !hideIds.has(id));
+  const missing = showIds.filter((id) => id !== '*' && !all.includes(id));
+  if (missing.length > 0) {
+    console.error(colors.yellow(`no recorded output for step(s): ${missing.join(', ')}`));
   }
-  if (!res.success) {
-    const msg = typeof res.error === 'string' ? res.error : (res.error?.message ?? 'unknown');
-    console.error(colors.red(`\nerror: ${msg}`));
+  const out: Record<string, unknown> = {};
+  for (const stepId of wanted) {
+    const params = new URLSearchParams();
+    if (showSecrets) params.set('showSecrets', 'true');
+    out[stepId] = await apiFetch<unknown>(
+      client,
+      `/execution-traces/${executionId}/steps/${encodeURIComponent(stepId)}?${params.toString()}`,
+    );
   }
+  console.log(JSON.stringify(out, null, 2));
 }
 
 export interface WorkflowsRunOptions {
@@ -194,94 +136,55 @@ export interface WorkflowsRunOptions {
 export async function runWorkflowsRun(opts: WorkflowsRunOptions): Promise<void> {
   const { client } = await openSession(opts, 'workflows run');
   const ref = await resolveWorkflowRef(client, opts.ref, opts.by);
-  const wf = await fetchWorkflow(client, ref.id);
 
   const initial = readInput(opts);
-  const body: ExecuteRequestBody = {
-    name: wf.name,
-    // Link the trace back to the stored workflow so the executions UI can
-    // open it in the builder (otherwise the trace persists workflowId='unknown').
-    workflowId: wf.id,
-    initial: { ...(wf.definition?.initial ?? {}), ...initial },
-    steps: wf.definition?.steps ?? [],
-  };
+  const body: { initial: Record<string, unknown>; environment?: string } = { initial };
+  // Server-side precedence: body.environment overrides the workflow's stored
+  // definition.environment without persisting; omit to use the stored one.
   if (opts.env !== undefined) body.environment = opts.env;
-  else if (wf.definition?.environment) body.environment = wf.definition.environment;
 
-  const mode = opts.mode ?? 'sync';
-  const respondAs = opts.respondAs ?? 'webhook';
-  const params = new URLSearchParams();
-  params.set('mode', mode);
-  params.set('respondAs', respondAs);
-  if (opts.show?.length) params.set('show', opts.show.join(','));
-  if (opts.hide?.length) params.set('hide', opts.hide.join(','));
+  // Always queue (explicit mode=async) — same call the UI Run button makes.
+  // A workflow configured executionMode=sync must not hold this request open
+  // or execute on the serving instance.
+  const queued = await apiFetch<ExecuteQueuedResponse>(
+    client,
+    `/workflows/${ref.id}/execute?mode=async`,
+    { method: 'POST', body: JSON.stringify(body) },
+  );
 
-  const controller = new AbortController();
-  const timeoutMs = opts.timeout !== undefined ? opts.timeout * 1000 : undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  if (timeoutMs !== undefined) {
-    timer = setTimeout(() => controller.abort(), timeoutMs);
-  }
-
-  let response: ExecuteSyncResponse | ExecuteAsyncResponse;
-  try {
-    response = await apiFetch<ExecuteSyncResponse | ExecuteAsyncResponse>(
-      client,
-      `/workflows/execute?${params.toString()}`,
-      { method: 'POST', body: JSON.stringify(body), signal: controller.signal },
-    );
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new TimeoutError(`Workflow execution exceeded --timeout=${opts.timeout}s.`);
-    }
-    throw err;
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
-
-  if (mode === 'async') {
-    const r = response as ExecuteAsyncResponse;
+  if (opts.mode === 'async') {
     if (opts.saveTrace || opts.saveStepsTo) {
       throw new UserError(
-        '--save-trace and --save-steps-to require --mode sync (async returns before the trace is finalized). ' +
+        '--save-trace and --save-steps-to require waiting for completion (default mode). ' +
           'Use `quickflo workflows executions tail <id> --save-trace ...` after queueing.',
       );
     }
     if (opts.json) {
-      console.log(JSON.stringify(r, null, 2));
+      console.log(JSON.stringify(queued, null, 2));
     } else {
-      console.error(colors.dim(`status: ${r.status}`));
-      console.error(colors.dim(`Tail with: quickflo workflows executions tail ${r.executionId}`));
-      console.log(r.executionId);
+      console.error(colors.dim(`status: ${queued.status}`));
+      console.error(colors.dim(`Tail with: quickflo workflows executions tail ${queued.executionId}`));
+      console.log(queued.executionId);
     }
     return;
   }
 
-  const r = response as ExecuteSyncResponse;
-  if (opts.json) {
-    console.log(JSON.stringify(r, null, 2));
-  } else {
-    printSync(wf.name, r);
-    if (r.output !== undefined) {
-      console.log('');
-      console.log(colors.bold('output:'));
-      console.log(JSON.stringify(r.output, null, 2));
-    }
+  // Default: wait for the queued run to finish. tailExecution renders
+  // progress, honors --timeout/--save-trace/--save-steps-to/--json, and
+  // throws on failed/cancelled/timeout with tail's exit-code contract.
+  if (!opts.json) {
+    console.error(colors.dim(`queued ${ref.name} → ${queued.executionId}`));
   }
-  if (r.executionId && (opts.saveTrace || opts.saveStepsTo)) {
-    if (opts.saveTrace) {
-      const path = await saveTrace(client, r.executionId, opts.saveTrace, opts.showSecrets);
-      console.error(colors.dim(`wrote trace → ${path}`));
-    }
-    if (opts.saveStepsTo) {
-      const paths = await saveSteps(client, r.executionId, opts.saveStepsTo, opts.showSecrets);
-      console.error(colors.dim(`wrote ${paths.length} step file(s) → ${opts.saveStepsTo}/`));
-    }
-  }
-  if (!r.success) {
-    const msg = typeof r.error === 'string'
-      ? r.error
-      : (r.error?.message ?? 'workflow execution failed');
-    throw new ValidationError(msg, { code: 'workflow_failed', details: r });
+  await tailExecution(client, {
+    id: queued.executionId,
+    timeout: opts.timeout,
+    saveTrace: opts.saveTrace,
+    saveStepsTo: opts.saveStepsTo,
+    showSecrets: opts.showSecrets,
+    json: opts.json,
+  });
+
+  if (opts.show?.length) {
+    await printStepOutputs(client, queued.executionId, opts.show, opts.hide, opts.showSecrets);
   }
 }

@@ -12,9 +12,9 @@
  */
 
 import { colors } from '@cliffy/ansi/colors';
-import { apiFetch } from './api.ts';
+import { type ApiClient, apiFetch } from './api.ts';
 import { openSession } from './session.ts';
-import { TimeoutError, UserError, ValidationError } from './errors.ts';
+import { ApiError, TimeoutError, UserError, ValidationError } from './errors.ts';
 import { isStdoutTTY } from './tty.ts';
 import { saveSteps, saveTrace } from './trace-save.ts';
 
@@ -68,6 +68,20 @@ export async function runWorkflowsExecutionsTail(
   opts: WorkflowsExecutionsTailOptions,
 ): Promise<void> {
   const { client } = await openSession(opts, 'workflows executions tail');
+  await tailExecution(client, opts);
+}
+
+/**
+ * Poll an execution until terminal, rendering progress to stderr and
+ * honoring --timeout / --save-trace / --save-steps-to / --json. Throws
+ * ValidationError on failure, UserError on cancel, TimeoutError on deadline —
+ * so callers inherit the tail exit-code contract. Exported so `workflows run`
+ * (which queues then waits) reuses the exact tail behavior on its own session.
+ */
+export async function tailExecution(
+  client: ApiClient,
+  opts: Omit<WorkflowsExecutionsTailOptions, 'apiUrl' | 'orgId'>,
+): Promise<void> {
   const intervalMs = Math.max(250, (opts.interval ?? 2) * 1000);
   const timeoutMs = opts.timeout !== undefined ? opts.timeout * 1000 : undefined;
   const tty = isStdoutTTY();
@@ -77,8 +91,24 @@ export async function runWorkflowsExecutionsTail(
   let lastStatus: string | undefined;
   let lastStepCount = -1;
 
+  // A freshly queued execution has no trace row until a worker claims the
+  // job, so early polls can 404. Treat 404 as "pending" for a bounded grace
+  // window instead of failing the tail.
+  const notFoundGraceMs = 60_000;
+
   while (true) {
-    const trace = await apiFetch<ExecutionTrace>(client, `/execution-traces/${opts.id}`);
+    let trace: ExecutionTrace;
+    try {
+      trace = await apiFetch<ExecutionTrace>(client, `/execution-traces/${opts.id}`);
+    } catch (err) {
+      const elapsed = Date.now() - started;
+      const withinGrace = elapsed < Math.min(notFoundGraceMs, timeoutMs ?? notFoundGraceMs);
+      if (err instanceof ApiError && err.status === 404 && withinGrace) {
+        await sleep(intervalMs);
+        continue;
+      }
+      throw err;
+    }
     last = trace;
     const status = trace.status ?? 'pending';
     const stepCount = Object.keys(trace.stepPaths ?? {}).length;

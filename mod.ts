@@ -480,7 +480,7 @@ const workflowsDelete = new Command()
   });
 
 const workflowsRun = new Command()
-  .description('Trigger a manual workflow run against /workflows/execute.')
+  .description('Trigger a manual workflow run and wait for it to finish.')
   .type('by', byType)
   .type('runMode', runModeType)
   .type('respondAs', respondAsType)
@@ -494,39 +494,38 @@ const workflowsRun = new Command()
   .option('--env <name:string>', 'Override the workflow environment used for variable resolution.')
   .option(
     '--mode <m:runMode>',
-    'Execution mode: sync (wait) or async (queue + return executionId).',
+    'sync (default: wait for the run to finish) or async (return the executionId immediately).',
     {
       default: 'sync' as const,
     },
   )
   .option(
     '--respond-as <r:respondAs>',
-    'Output shape: webhook (default — the body the return step would send over HTTP, ' +
-      'like the real /w/... endpoint) or execution (the step-keyed output, filtered by --show/--hide).',
+    'Deprecated: use --show <step-id> to print specific step outputs.',
     { default: 'webhook' as const },
   )
   .option(
     '--show <ids:string>',
-    'Comma-separated step IDs to include in the output (--respond-as execution only).',
+    'Comma-separated step IDs whose outputs to print after completion ("*" for all).',
     {
       collect: true,
     },
   )
   .option(
     '--hide <ids:string>',
-    'Comma-separated step IDs to exclude from the output (--respond-as execution only).',
+    'Comma-separated step IDs to exclude from --show output.',
     {
       collect: true,
     },
   )
-  .option('--timeout <seconds:number>', 'Client-side timeout (sync mode only).')
+  .option('--timeout <seconds:number>', 'Max seconds to wait for completion (default: no limit).')
   .option(
     '--save-trace <path:string>',
-    'After a sync run completes, save the full trace JSON to this path.',
+    'After the run completes, save the full trace JSON to this path.',
   )
   .option(
     '--save-steps-to <dir:string>',
-    'After a sync run completes, write one JSON file per step output into this directory.',
+    'After the run completes, write one JSON file per step output into this directory.',
   )
   .option('--show-secrets', 'Include secret values in saved trace / step output.', {
     default: false,
@@ -541,8 +540,8 @@ const workflowsRun = new Command()
     `quickflo workflows run my-wf --input '{}' --mode async -o abcd`,
   )
   .example(
-    'Inspect per-step outputs instead of the webhook response',
-    `quickflo workflows run my-wf --respond-as execution --show '*'`,
+    'Print every step output after completion',
+    `quickflo workflows run my-wf --show '*'`,
   )
   .example(
     'Run + persist trace and per-step outputs',
