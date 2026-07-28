@@ -188,6 +188,37 @@ function publishVersion(
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Public packages require the canonical `@<orgSuid>/<name>` slug, and the
+ * server only enforces that on the private→public transition — so a bare
+ * slug written at auto-create produces a package that can never go public.
+ * Canonicalize here, where the org is known.
+ */
+export function canonicalizeSlug(ref: string, orgSuid: string | undefined): string {
+  if (ref.startsWith('@')) {
+    const [owner, ...rest] = ref.slice(1).split('/');
+    if (!owner || rest.length !== 1 || !rest[0]) {
+      throw new Error(
+        `Invalid package slug "${ref}" — expected "@<org>/<package-name>"`,
+      );
+    }
+    if (orgSuid && owner !== orgSuid) {
+      throw new Error(
+        `Slug "${ref}" doesn't belong to the authenticated org — the canonical slug for this org is "@${orgSuid}/${
+          rest[0]
+        }"`,
+      );
+    }
+    return ref;
+  }
+  if (!orgSuid) {
+    throw new Error(
+      `Cannot derive the canonical slug for "${ref}": the authenticated org has no suid. Pass the full "@<org>/${ref}" slug instead.`,
+    );
+  }
+  return `@${orgSuid}/${ref}`;
+}
+
 export interface PackagesPublishOptions {
   packageRef: string;
   apiUrl?: string;
@@ -243,6 +274,7 @@ export async function runPackagesPublish(
 
   // Resolve the target Package row — find by id or slug, or create.
   let pkg: PackageRow | null;
+  let createSlug: string | null = null;
   if (UUID_RE.test(opts.packageRef)) {
     pkg = await getPackageById(client, opts.packageRef);
     if (!pkg) {
@@ -250,6 +282,14 @@ export async function runPackagesPublish(
     }
   } else {
     pkg = await findPackageBySlug(client, opts.packageRef);
+    if (!pkg) {
+      // Bare refs (e.g. `lead-gen`) may point at a package stored under its
+      // canonical slug — retry the lookup before deciding to auto-create.
+      createSlug = canonicalizeSlug(opts.packageRef, org.suid);
+      if (createSlug !== opts.packageRef) {
+        pkg = await findPackageBySlug(client, createSlug);
+      }
+    }
     if (!pkg) {
       const name = opts.name ?? descriptor?.package?.name;
       const visibility = opts.visibility ?? descriptor?.package?.visibility ?? 'private';
@@ -260,14 +300,16 @@ export async function runPackagesPublish(
       }
       console.error(
         colors.dim(
-          `\nPackage "${opts.packageRef}" not found — creating with visibility=${visibility}`,
+          `\nPackage "${opts.packageRef}" not found — creating as ${
+            colors.bold(createSlug!)
+          } with visibility=${visibility}`,
         ),
       );
       if (opts.dryRun) {
-        console.error(colors.yellow('[dry-run] would create package'));
+        console.error(colors.yellow(`[dry-run] would create package ${createSlug}`));
       } else {
         pkg = await createPackage(client, {
-          slug: opts.packageRef,
+          slug: createSlug!,
           name,
           visibility,
           ...(description !== undefined ? { description } : {}),
@@ -275,7 +317,7 @@ export async function runPackagesPublish(
           ...(tags !== undefined ? { tags } : {}),
         });
         console.error(
-          colors.green(`✓ Created package ${colors.dim(pkg.id)}`),
+          colors.green(`✓ Created package ${colors.bold(pkg.slug)} ${colors.dim(pkg.id)}`),
         );
       }
     }
@@ -283,7 +325,7 @@ export async function runPackagesPublish(
 
   console.error('');
   console.error(
-    `Publishing ${colors.bold(pkg?.slug ?? opts.packageRef)}@${colors.cyan(version)}`,
+    `Publishing ${colors.bold(pkg?.slug ?? createSlug ?? opts.packageRef)}@${colors.cyan(version)}`,
   );
   console.error(`  Roots: ${roots.length}`);
   for (const r of roots) {
