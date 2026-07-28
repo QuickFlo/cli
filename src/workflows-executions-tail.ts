@@ -1,14 +1,17 @@
 /**
  * `quickflo workflows executions tail <id>` — poll an execution until it
- * reaches a terminal state (success / failed / cancelled), rendering live
- * progress to stderr. On completion, optionally persist the full trace
- * and/or fan out per-step output to disk.
+ * reaches a terminal state, rendering live progress to stderr. On completion,
+ * optionally persist the full trace and/or fan out per-step output to disk.
  *
  * Exit codes mirror the underlying status:
- *   success    → 0
- *   failed     → 3  (ValidationError)
- *   cancelled  → 1  (UserError — server-initiated cancel)
- *   timeout    → 124 (client-side --timeout fired before terminal)
+ *   success               → 0
+ *   completed_with_errors → 0  (run finished; step errors were tolerated by
+ *                               continueOnError — warned on stderr)
+ *   failed                → 3  (ValidationError)
+ *   timed_out             → 3  (ValidationError — server-side execution timeout)
+ *   cancelled             → 1  (UserError — server-initiated cancel)
+ *   rejected              → 1  (UserError — refused before it ran)
+ *   timeout               → 124 (client-side --timeout fired before terminal)
  */
 
 import { colors } from '@cliffy/ansi/colors';
@@ -30,12 +33,31 @@ interface ExecutionTrace {
   error?: { message?: string } | string;
 }
 
-const TERMINAL = new Set(['success', 'failed', 'cancelled', 'error']);
+/**
+ * Statuses a run can no longer move out of, mirroring the server's
+ * `ExecutionStatus` enum (`libs/execution-traces/.../execution-trace.model.ts`).
+ *
+ * Deliberately EXCLUDED, because the run can still progress and polling should
+ * continue: `running`, plus `crashed` and `suspended` — both are resumable, so
+ * the wake/claim machinery may still carry them to a terminal state.
+ *
+ * `error` is not a server status; it is kept only as a defensive alias for
+ * older API responses.
+ */
+const TERMINAL = new Set([
+  'success',
+  'completed_with_errors',
+  'failed',
+  'cancelled',
+  'rejected',
+  'timed_out',
+  'error',
+]);
 
 function colorStatus(s: string): string {
   if (s === 'success') return colors.green(s);
-  if (s === 'failed' || s === 'error') return colors.red(s);
-  if (s === 'cancelled') return colors.yellow(s);
+  if (s === 'failed' || s === 'error' || s === 'timed_out' || s === 'rejected') return colors.red(s);
+  if (s === 'cancelled' || s === 'completed_with_errors') return colors.yellow(s);
   if (s === 'running') return colors.cyan(s);
   return s;
 }
@@ -168,11 +190,28 @@ export async function tailExecution(
   }
 
   const status = last.status ?? '';
-  if (status === 'failed' || status === 'error') {
-    const msg = typeof last.error === 'string' ? last.error : (last.error?.message ?? 'failed');
+  if (status === 'failed' || status === 'error' || status === 'timed_out') {
+    const msg = typeof last.error === 'string' ? last.error : (last.error?.message ?? status);
     throw new ValidationError(msg, { code: 'execution_failed', details: last });
   }
   if (status === 'cancelled') {
     throw new UserError(`Execution ${opts.id} was cancelled.`, { code: 'execution_cancelled' });
+  }
+  if (status === 'rejected') {
+    throw new UserError(`Execution ${opts.id} was rejected before it ran.`, {
+      code: 'execution_rejected',
+      details: last,
+    });
+  }
+  // `completed_with_errors` exits 0 on purpose: the run finished, and it only
+  // reaches this state when the author set `continueOnError` on the step that
+  // failed — i.e. the failure was explicitly tolerated. Without that opt-in the
+  // run would have ended `failed` (exit 3). Warn so it is never silent.
+  if (status === 'completed_with_errors' && !opts.json) {
+    console.error(
+      colors.yellow(
+        `! Execution ${opts.id} completed with step errors that were tolerated by continueOnError.`,
+      ),
+    );
   }
 }
