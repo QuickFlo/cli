@@ -56,7 +56,9 @@ const TERMINAL = new Set([
 
 function colorStatus(s: string): string {
   if (s === 'success') return colors.green(s);
-  if (s === 'failed' || s === 'error' || s === 'timed_out' || s === 'rejected') return colors.red(s);
+  if (s === 'failed' || s === 'error' || s === 'timed_out' || s === 'rejected') {
+    return colors.red(s);
+  }
   if (s === 'cancelled' || s === 'completed_with_errors') return colors.yellow(s);
   if (s === 'running') return colors.cyan(s);
   return s;
