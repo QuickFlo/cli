@@ -10,12 +10,14 @@
 import { AGENT_GUIDE, BUILDING_DASHBOARDS, BUILDING_WORKFLOWS } from './skill-guides.ts';
 
 const NAME = 'quickflo';
+// Kept short on purpose: harnesses list every skill's description in the system
+// prompt under a fixed budget (Codex caps the block at ~2% of the context window
+// and silently drops whole skills once it overflows), so verbose descriptions
+// evict other skills. Trigger words only; the detail lives in AGENT_GUIDE below.
 const DESC = 'Drive the QuickFlo platform from the terminal with the `quickflo` command: ' +
-  'inspect/run/validate workflows, tail and download executions, browse the step ' +
-  'catalog, build and query dashboards and their data sources (BI/analytics), and ' +
-  'manage triggers, connections, environments, data-stores, dashboards, and ' +
-  'packages across orgs. Use whenever you need a local agent harness to work ' +
-  'against a live QuickFlo org.';
+  'workflows, executions, step catalog, dashboards and data sources, triggers, ' +
+  'connections, environments, data-stores, packages.';
+const ARGUMENT_HINT = 'what you want to do (e.g. "list failed runs today")';
 
 const MCP_SNIPPET = `Add the QuickFlo MCP server to your host config (Claude Desktop/Code, Cursor,
 Codex ~/.codex/config.toml [mcp_servers], …). Run \`quickflo auth login\` first.
@@ -46,11 +48,13 @@ export async function runSkillInstall(opts: SkillInstallOptions): Promise<void> 
     case 'claude': {
       const dir = opts.target || `${home()}/.claude/skills/quickflo`;
       await Deno.mkdir(dir, { recursive: true });
+      // JSON.stringify emits a double-quoted YAML scalar: DESC contains `: ` and
+      // the hint contains quotes, both of which break a plain (unquoted) scalar.
       const skillMd = `---
 name: ${NAME}
-description: ${DESC}
+description: ${JSON.stringify(DESC)}
 user-invocable: true
-argument-hint: what you want to do (e.g. "list failed runs today")
+argument-hint: ${JSON.stringify(ARGUMENT_HINT)}
 ---
 
 ${AGENT_GUIDE}

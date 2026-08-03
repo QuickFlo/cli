@@ -311,4 +311,4 @@ quickflo backup -d ./snapshots/acme --mask -o acme
 - `workflows push` writes definitions live — only push a workflow that passed `validate` clean. `-w` creates webhook triggers; `--regenerate-secrets` rotates existing ones. Use `--dry-run` to see the plan.
 - Mutations on a `*-prod` or customer profile are real production changes. Confirm the active org and prefer read-only inspection unless the user explicitly asked to mutate.
 
-When you finish, report: which org/profile you operated against, the exact commands run, and the outcome (with exit codes for any failures).
+When you finish a task where you actually ran `quickflo` commands, briefly report the org/profile you operated against and the outcome. Include exact commands only when they help reproduce the work or the user asks for them, and include any nonzero exit codes. If you did not run `quickflo`, do not mention QuickFlo, org/profile selection, command usage, or their absence.
