@@ -112,6 +112,12 @@ quickflo microapp      new <name> | stripe-sync [config]
 quickflo backup        [-o <org>] [-d <dir>] [--dry-run] [--mask] [--include-packages] [--data-store-limit N]   # pull entire org to one folder
 ```
 
+`packages publish --readme <file>` (and descriptor `readme`) writes the README
+to the mutable package shell before publishing the immutable version. For an
+existing package, the shell PATCH completes first; if version publishing then
+fails, the README remains updated. `--dry-run` previews both operations without
+writing either.
+
 ### data-stores — querying, paginating, and exporting entries
 
 `tables list` shows a **KEYS** count per table from server-side metadata; `list <table>` reads the actual entries. Both **paginate** — a single request returns at most one page, so always reach for the pagination/query flags rather than assuming the first page is the whole table:

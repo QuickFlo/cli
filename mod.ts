@@ -1101,7 +1101,10 @@ const packagesPublish = new Command()
   .option('--tags <list:string>', 'Tags (comma-separated). Repeatable.', {
     collect: true,
   })
-  .option('--readme <file:file>', 'Path to a README markdown file')
+  .option(
+    '--readme <file:file>',
+    'Path to README markdown; updates the package shell before publishing',
+  )
   .option('--changelog <file:file>', 'Path to a release-notes markdown file')
   .option(
     '--name <text:string>',

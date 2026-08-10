@@ -7,14 +7,16 @@
  * uploads the resulting `.qfpkg` to platform storage.
  *
  * Two ways to specify the publish:
- *   1. `--descriptor <file.json>` carrying the full body (matches the
- *      `PublishPackageVersionDto` schema) — best for version-controlled
- *      release definitions.
+ *   1. `--descriptor <file.json>` carrying the version payload plus optional
+ *      package-shell metadata — best for version-controlled release
+ *      definitions.
  *   2. CLI flags: `--root <kind>:<value>` (repeatable), `--version`,
  *      plus optional `--summary`, `--description`, `--readme`, `--changelog`,
  *      `--tags`, `--icon`. Good for ad-hoc publishes.
  *
- * Flags override descriptor fields when both are supplied.
+ * Flags override descriptor fields when both are supplied. README is stored
+ * on the mutable Package shell before the immutable version is published;
+ * the server snapshots that live value into the artifact.
  *
  * If `--package <slug>` is given and the package doesn't exist for the org,
  * the command creates it first (requires `--name` + `--visibility`) before
@@ -45,6 +47,7 @@ interface PackageRow {
   slug: string;
   name: string;
   visibility: Visibility;
+  readme?: string | null;
 }
 
 interface PackageVersionRow {
@@ -84,6 +87,20 @@ interface PublishDescriptor {
   changelog?: string;
 }
 
+type PublishVersionBody = Omit<PublishDescriptor, 'package' | 'readme'>;
+
+export interface PackagesPublishDependencies {
+  openSession: typeof openSession;
+  apiFetch: typeof apiFetch;
+  readTextFile(path: string): Promise<string>;
+}
+
+const defaultDependencies: PackagesPublishDependencies = {
+  openSession,
+  apiFetch,
+  readTextFile: (path) => Deno.readTextFile(path),
+};
+
 const ROOT_KINDS = new Set([
   'workflow',
   'sub-workflow',
@@ -118,25 +135,32 @@ function parseRootFlag(expr: string): PublishRoot {
   }
 }
 
-async function readDescriptor(path: string): Promise<PublishDescriptor> {
-  const raw = await Deno.readTextFile(resolvePath(path));
+async function readDescriptor(
+  path: string,
+  readTextFile: PackagesPublishDependencies['readTextFile'],
+): Promise<PublishDescriptor> {
+  const raw = await readTextFile(resolvePath(path));
   return JSON.parse(raw) as PublishDescriptor;
 }
 
-async function maybeReadFile(path: string | undefined): Promise<string | undefined> {
+async function maybeReadFile(
+  path: string | undefined,
+  readTextFile: PackagesPublishDependencies['readTextFile'],
+): Promise<string | undefined> {
   if (!path) return undefined;
-  return await Deno.readTextFile(resolvePath(path));
+  return await readTextFile(resolvePath(path));
 }
 
 async function findPackageBySlug(
   client: ApiClient,
   slug: string,
+  fetchApi: typeof apiFetch,
 ): Promise<PackageRow | null> {
   const params = new URLSearchParams();
   params.set('where[organizationId][$eq]', client.orgId);
   params.set('where[slug][$eq]', slug);
   params.set('options[limit]', '1');
-  const res = await apiFetch<{ data: PackageRow[]; total: number }>(
+  const res = await fetchApi<{ data: PackageRow[]; total: number }>(
     client,
     `/packages?${params.toString()}`,
   );
@@ -146,9 +170,10 @@ async function findPackageBySlug(
 async function getPackageById(
   client: ApiClient,
   id: string,
+  fetchApi: typeof apiFetch,
 ): Promise<PackageRow | null> {
   try {
-    return await apiFetch<PackageRow>(client, `/packages/${encodeURIComponent(id)}`);
+    return await fetchApi<PackageRow>(client, `/packages/${encodeURIComponent(id)}`);
   } catch {
     return null;
   }
@@ -163,20 +188,35 @@ function createPackage(
     description?: string;
     icon?: string;
     tags?: string[];
+    readme?: string;
   },
+  fetchApi: typeof apiFetch,
 ): Promise<PackageRow> {
-  return apiFetch<PackageRow>(client, '/packages', {
+  return fetchApi<PackageRow>(client, '/packages', {
     method: 'POST',
     body: JSON.stringify(body),
+  });
+}
+
+function updatePackageReadme(
+  client: ApiClient,
+  packageId: string,
+  readme: string,
+  fetchApi: typeof apiFetch,
+): Promise<PackageRow> {
+  return fetchApi<PackageRow>(client, `/packages/${encodeURIComponent(packageId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ readme }),
   });
 }
 
 function publishVersion(
   client: ApiClient,
   packageId: string,
-  body: Omit<PublishDescriptor, 'package'>,
+  body: PublishVersionBody,
+  fetchApi: typeof apiFetch,
 ): Promise<PublishVersionResponse> {
-  return apiFetch<PublishVersionResponse>(
+  return fetchApi<PublishVersionResponse>(
     client,
     `/packages/${encodeURIComponent(packageId)}/versions`,
     {
@@ -241,14 +281,15 @@ export interface PackagesPublishOptions {
 
 export async function runPackagesPublish(
   opts: PackagesPublishOptions,
+  dependencies: PackagesPublishDependencies = defaultDependencies,
 ): Promise<void> {
-  const { client, org } = await openSession(opts, 'packages publish');
+  const { client, org } = await dependencies.openSession(opts, 'packages publish');
   console.error(
     colors.dim(`\nAuthor org: ${org.name} (${org.suid ?? org.id})`),
   );
 
   const descriptor: PublishDescriptor | null = opts.descriptor
-    ? await readDescriptor(opts.descriptor)
+    ? await readDescriptor(opts.descriptor, dependencies.readTextFile)
     : null;
 
   // Merge: CLI flags override descriptor.
@@ -269,28 +310,32 @@ export async function runPackagesPublish(
   const summary = opts.summary ?? descriptor?.summary;
   const description = opts.description ?? descriptor?.description;
   const icon = opts.icon ?? descriptor?.icon;
-  const readme = (await maybeReadFile(opts.readmeFile)) ?? descriptor?.readme;
-  const changelog = (await maybeReadFile(opts.changelogFile)) ?? descriptor?.changelog;
+  const readme = (await maybeReadFile(opts.readmeFile, dependencies.readTextFile)) ??
+    descriptor?.readme;
+  const changelog = (await maybeReadFile(opts.changelogFile, dependencies.readTextFile)) ??
+    descriptor?.changelog;
 
   // Resolve the target Package row — find by id or slug, or create.
   let pkg: PackageRow | null;
   let createSlug: string | null = null;
+  let packageIsNew = false;
   if (UUID_RE.test(opts.packageRef)) {
-    pkg = await getPackageById(client, opts.packageRef);
+    pkg = await getPackageById(client, opts.packageRef, dependencies.apiFetch);
     if (!pkg) {
       throw new Error(`Package id "${opts.packageRef}" not found`);
     }
   } else {
-    pkg = await findPackageBySlug(client, opts.packageRef);
+    pkg = await findPackageBySlug(client, opts.packageRef, dependencies.apiFetch);
     if (!pkg) {
       // Bare refs (e.g. `lead-gen`) may point at a package stored under its
       // canonical slug — retry the lookup before deciding to auto-create.
       createSlug = canonicalizeSlug(opts.packageRef, org.suid);
       if (createSlug !== opts.packageRef) {
-        pkg = await findPackageBySlug(client, createSlug);
+        pkg = await findPackageBySlug(client, createSlug, dependencies.apiFetch);
       }
     }
     if (!pkg) {
+      packageIsNew = true;
       const name = opts.name ?? descriptor?.package?.name;
       const visibility = opts.visibility ?? descriptor?.package?.visibility ?? 'private';
       if (!name) {
@@ -315,11 +360,24 @@ export async function runPackagesPublish(
           ...(description !== undefined ? { description } : {}),
           ...(icon !== undefined ? { icon } : {}),
           ...(tags !== undefined ? { tags } : {}),
-        });
+          ...(readme !== undefined ? { readme } : {}),
+        }, dependencies.apiFetch);
         console.error(
           colors.green(`✓ Created package ${colors.bold(pkg.slug)} ${colors.dim(pkg.id)}`),
         );
       }
+    }
+  }
+
+  // README is mutable package-shell metadata, not version metadata. Keep it
+  // live on the Package row so the builder can snapshot that value into the
+  // artifact and installers always see the latest author-owned copy.
+  if (readme !== undefined && !packageIsNew && pkg) {
+    if (opts.dryRun) {
+      console.error(colors.yellow('[dry-run] would update package README'));
+    } else {
+      pkg = await updatePackageReadme(client, pkg.id, readme, dependencies.apiFetch);
+      console.error(colors.green('✓ Updated package README'));
     }
   }
 
@@ -352,7 +410,7 @@ export async function runPackagesPublish(
     throw new Error('Package not resolved — internal CLI error');
   }
 
-  const body: Omit<PublishDescriptor, 'package'> = {
+  const body: PublishVersionBody = {
     version,
     roots,
     ...(summary !== undefined ? { summary } : {}),
@@ -363,11 +421,10 @@ export async function runPackagesPublish(
     ...(descriptor?.sharedEnvDefaults ? { sharedEnvDefaults: descriptor.sharedEnvDefaults } : {}),
     ...(descriptor?.descriptions ? { descriptions: descriptor.descriptions } : {}),
     ...(descriptor?.optionalEnvKeys ? { optionalEnvKeys: descriptor.optionalEnvKeys } : {}),
-    ...(readme !== undefined ? { readme } : {}),
     ...(changelog !== undefined ? { changelog } : {}),
   };
 
-  const result = await publishVersion(client, pkg.id, body);
+  const result = await publishVersion(client, pkg.id, body, dependencies.apiFetch);
   console.error('');
   console.error(
     `${colors.green('✓')} Published ${colors.bold(pkg.slug)}@${

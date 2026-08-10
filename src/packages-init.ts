@@ -1,6 +1,6 @@
 /**
  * `quickflo packages init` — scaffold a `pkg.json` descriptor matching the
- * shape `packages publish --descriptor` reads (`PublishPackageVersionDto`).
+ * shape `packages publish --descriptor` reads.
  *
  * Non-interactive when every required field is supplied via flags
  * (`--name`, `--from-org`, `--roots`); otherwise prompts the user for the

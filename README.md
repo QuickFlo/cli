@@ -253,6 +253,9 @@ quickflo packages publish onboarding \
   --version 1.0.0 --root workflow:abc
 ```
 
+`--readme` updates the package-level README before publishing the immutable
+version. The server then snapshots that live README into the package artifact.
+
 A descriptor file (`pkg.json`):
 
 ```json
