@@ -545,6 +545,19 @@ export interface AuthUseOptions {
   name: string;
 }
 
+export function formatAuthUseConfirmation(name: string, profile: Profile): string[] {
+  const lines = [
+    colors.green(`✓ Active profile: ${colors.bold(name)}`),
+    `  API: ${profile.apiUrl}`,
+  ];
+  if (profile.orgName) {
+    lines.push(
+      `  ${profile.orgName} ${colors.dim(`(${profile.orgSuid ?? '—'})`)}`,
+    );
+  }
+  return lines;
+}
+
 export async function runAuthUse(opts: AuthUseOptions): Promise<void> {
   const ok = await setCurrentProfile(opts.name);
   if (!ok) {
@@ -561,10 +574,7 @@ export async function runAuthUse(opts: AuthUseOptions): Promise<void> {
     Deno.exit(1);
   }
   const profile = (await readCredentials())!.profiles[opts.name];
-  console.error(colors.green(`✓ Active profile: ${colors.bold(opts.name)}`));
-  if (profile.orgName) {
-    console.error(
-      `  ${profile.orgName} ${colors.dim(`(${profile.orgSuid ?? '—'})`)}`,
-    );
+  for (const line of formatAuthUseConfirmation(opts.name, profile)) {
+    console.error(line);
   }
 }
