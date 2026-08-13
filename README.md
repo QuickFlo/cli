@@ -524,6 +524,12 @@ Close the **author → run → observe → fix** loop without leaving the termin
 # Default: queue the run, wait for completion, exit with the run's status
 quickflo workflows run my-wf --input '{"x":1}'
 
+# Machine-readable finite result: exactly one JSON document
+quickflo workflows run my-wf --input '{"x":1}' -j | jq '.output'
+
+# Machine-readable live progress: one typed JSON object per line
+quickflo workflows run my-wf --input '{"x":1}' --json-stream
+
 # Async: queue + print just the executionId (tail it later)
 quickflo workflows run my-wf --input-file ./payload.json --mode async
 
@@ -562,6 +568,9 @@ quickflo workflows executions download <execution-id> --out ./trace.json
 # Tail a running execution until terminal; persist on completion
 quickflo workflows executions tail <execution-id> \
   --save-trace ./trace.json --save-steps-to ./steps/
+
+# Tail as typed JSONL (one compact event per line)
+quickflo workflows executions tail <execution-id> --json-stream
 
 # Re-run with the same initial input
 quickflo workflows executions replay <execution-id>
@@ -617,6 +626,8 @@ Designed so scripts and agents can depend on stable behavior:
 
 - **Auto-yes on confirm prompts when stdin is not a TTY** — matches `gh`, `npm`. Pass `--yes` explicitly in scripts to make intent visible.
 - **`-j/--json` on every list/get/inspect command** — JSON payload to stdout, banner / progress to stderr.
+- **Finite run JSON** — `workflows run -j` emits exactly one versioned result object after completion (`executionId`, `status`, `success`, `output`, and optional `steps`).
+- **Explicit JSONL streams** — `workflows run --json-stream`, `workflows executions tail --json-stream`, and `logs search --follow -j` emit one compact JSON object per line. Stream events carry a `type` discriminator; run/execution streams also carry `schemaVersion`.
 - **`--quiet`** suppresses progress output; errors still print.
 - **JSON error envelope** — when `-j` was passed, errors land on stderr as `{"error":{"code":"...","message":"...","status":...,"path":"...","details":...}}`.
 - **Stable exit codes** — see [EXIT_CODES.md](./EXIT_CODES.md). `0` ok, `1` user error, `2` server error, `3` validation, `124` timeout, `130` interrupted.
@@ -655,6 +666,8 @@ Stdout is the payload; diagnostics go to stderr. Redirect freely:
 ```bash
 quickflo workflows get abcd > wf.json           # JSON only
 quickflo workflows list -j | jq '.[].name'       # clean pipe
+quickflo workflows run abcd -j | jq '.output'    # one final result object
+quickflo workflows run abcd --json-stream | jq -c '.' # JSONL progress + result
 quickflo workflows push -d ./wf -w > urls.txt   # just URL + secret lines
 ```
 

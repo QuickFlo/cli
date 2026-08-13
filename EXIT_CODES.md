@@ -17,6 +17,8 @@ outcomes without parsing stderr. These are part of the public contract.
 - stdout is reserved for the command's machine-readable output (`-j/--json` payloads, raw resource data, piped streams)
 - stderr is for human-readable progress, prompts, warnings, and errors
 - with `-j`, errors are emitted to stderr as JSON: `{"error":{"code":"...","message":"...","status":...,"path":"...","details":...}}`
+- finite commands emit one JSON document under `-j`; `workflows run -j` waits and emits one versioned result envelope
+- live machine-readable progress is explicit (`--json-stream`) and uses JSONL: one compact, typed object per line
 
 ## Non-interactive behavior
 

@@ -20,17 +20,12 @@ import { openSession } from './session.ts';
 import { ApiError, TimeoutError, UserError, ValidationError } from './errors.ts';
 import { isStdoutTTY } from './tty.ts';
 import { saveSteps, saveTrace } from './trace-save.ts';
+import type { WorkflowRunTrace } from './workflow-run-result.ts';
 
-interface ExecutionTrace {
-  id: string;
-  workflowId?: string;
-  workflowName?: string;
+export interface ExecutionTrace extends WorkflowRunTrace {
   status?: string;
   startedAt?: string;
   completedAt?: string;
-  durationMilliseconds?: number;
-  stepPaths?: Record<string, string>;
-  error?: { message?: string } | string;
 }
 
 /**
@@ -85,14 +80,81 @@ export interface WorkflowsExecutionsTailOptions {
   showSecrets?: boolean;
   apiUrl?: string;
   orgId?: string;
+  /** Deprecated alias for jsonStream. */
   json?: boolean;
+  jsonStream?: boolean;
+}
+
+export type ExecutionStreamEvent =
+  | {
+    schemaVersion: 1;
+    type: 'queued';
+    executionId: string;
+    status: string;
+  }
+  | {
+    schemaVersion: 1;
+    type: 'progress';
+    executionId: string;
+    status: string;
+    elapsedMs: number;
+    stepsExecuted: number;
+  }
+  | {
+    schemaVersion: 1;
+    type: 'result';
+    executionId: string;
+    status: string;
+    elapsedMs: number;
+    trace: ExecutionTrace;
+  };
+
+export function executionStreamLine(event: ExecutionStreamEvent): string {
+  return JSON.stringify(event);
+}
+
+interface TailExecutionOptions {
+  id: string;
+  interval?: number;
+  timeout?: number;
+  saveTrace?: string;
+  saveStepsTo?: string;
+  showSecrets?: boolean;
+  renderProgress?: boolean;
+  onProgress?: (event: Extract<ExecutionStreamEvent, { type: 'progress' }>) => void | Promise<void>;
 }
 
 export async function runWorkflowsExecutionsTail(
   opts: WorkflowsExecutionsTailOptions,
 ): Promise<void> {
   const { client } = await openSession(opts, 'workflows executions tail');
-  await tailExecution(client, opts);
+  const jsonStream = opts.jsonStream === true || opts.json === true;
+  const started = Date.now();
+  const trace = await tailExecution(client, {
+    id: opts.id,
+    interval: opts.interval,
+    timeout: opts.timeout,
+    saveTrace: opts.saveTrace,
+    saveStepsTo: opts.saveStepsTo,
+    showSecrets: opts.showSecrets,
+    renderProgress: !jsonStream,
+    onProgress: jsonStream ? (event) => console.log(executionStreamLine(event)) : undefined,
+  });
+
+  if (jsonStream) {
+    console.log(executionStreamLine({
+      schemaVersion: 1,
+      type: 'result',
+      executionId: trace.id,
+      status: trace.status ?? 'unknown',
+      elapsedMs: Date.now() - started,
+      trace,
+    }));
+  } else {
+    renderExecutionCompletion(trace, started);
+  }
+
+  assertExecutionSucceeded(trace, opts.id);
 }
 
 /**
@@ -104,8 +166,8 @@ export async function runWorkflowsExecutionsTail(
  */
 export async function tailExecution(
   client: ApiClient,
-  opts: Omit<WorkflowsExecutionsTailOptions, 'apiUrl' | 'orgId'>,
-): Promise<void> {
+  opts: TailExecutionOptions,
+): Promise<ExecutionTrace> {
   const intervalMs = Math.max(250, (opts.interval ?? 2) * 1000);
   const timeoutMs = opts.timeout !== undefined ? opts.timeout * 1000 : undefined;
   const tty = isStdoutTTY();
@@ -138,9 +200,20 @@ export async function tailExecution(
     const stepCount = Object.keys(trace.stepPaths ?? {}).length;
     const elapsed = Date.now() - started;
 
-    if (opts.json) {
-      console.log(JSON.stringify({ ts: new Date().toISOString(), elapsedMs: elapsed, trace }));
-    } else if (status !== lastStatus || stepCount !== lastStepCount) {
+    const terminal = TERMINAL.has(status);
+    if (!terminal && opts.onProgress) {
+      await opts.onProgress({
+        schemaVersion: 1,
+        type: 'progress',
+        executionId: trace.id,
+        status,
+        elapsedMs: elapsed,
+        stepsExecuted: stepCount,
+      });
+    } else if (
+      !terminal && opts.renderProgress !== false &&
+      (status !== lastStatus || stepCount !== lastStepCount)
+    ) {
       const line = renderProgressLine(trace, elapsed, tty);
       if (tty) {
         await Deno.stderr.write(new TextEncoder().encode(line));
@@ -151,12 +224,16 @@ export async function tailExecution(
     lastStatus = status;
     lastStepCount = stepCount;
 
-    if (TERMINAL.has(status)) {
-      if (tty && !opts.json) await Deno.stderr.write(new TextEncoder().encode('\n'));
+    if (terminal) {
+      if (tty && opts.renderProgress !== false) {
+        await Deno.stderr.write(new TextEncoder().encode('\n'));
+      }
       break;
     }
     if (timeoutMs !== undefined && elapsed > timeoutMs) {
-      if (tty && !opts.json) await Deno.stderr.write(new TextEncoder().encode('\n'));
+      if (tty && opts.renderProgress !== false) {
+        await Deno.stderr.write(new TextEncoder().encode('\n'));
+      }
       throw new TimeoutError(
         `Execution ${opts.id} did not reach a terminal state within ${opts.timeout}s.`,
       );
@@ -177,42 +254,48 @@ export async function tailExecution(
     console.error(colors.dim(`wrote ${paths.length} step file(s) → ${opts.saveStepsTo}/`));
   }
 
-  if (opts.json) {
-    const final = await apiFetch<ExecutionTrace>(client, `/execution-traces/${opts.id}`);
-    console.log(JSON.stringify(final, null, 2));
-  } else {
-    const duration = last.durationMilliseconds !== undefined
-      ? `${last.durationMilliseconds}ms`
-      : `${((Date.now() - started) / 1000).toFixed(1)}s`;
-    console.error(
-      `${colorStatus(last.status ?? '—')} · ${
-        Object.keys(last.stepPaths ?? {}).length
-      } step(s) · ${duration}`,
-    );
-  }
+  return last;
+}
 
-  const status = last.status ?? '';
+export function renderExecutionCompletion(trace: ExecutionTrace, started: number): void {
+  const duration = trace.durationMilliseconds !== undefined
+    ? `${trace.durationMilliseconds}ms`
+    : `${((Date.now() - started) / 1000).toFixed(1)}s`;
+  console.error(
+    `${colorStatus(trace.status ?? '—')} · ${
+      Object.keys(trace.stepPaths ?? {}).length
+    } step(s) · ${duration}`,
+  );
+}
+
+export function assertExecutionSucceeded(trace: ExecutionTrace, executionId = trace.id): void {
+  const status = trace.status ?? '';
   if (status === 'failed' || status === 'error' || status === 'timed_out') {
-    const msg = typeof last.error === 'string' ? last.error : (last.error?.message ?? status);
-    throw new ValidationError(msg, { code: 'execution_failed', details: last });
+    const error = trace.error;
+    const msg = typeof error === 'string'
+      ? error
+      : error && typeof error === 'object' && 'message' in error
+      ? String((error as { message?: unknown }).message ?? status)
+      : status;
+    throw new ValidationError(msg, { code: 'execution_failed', details: trace });
   }
   if (status === 'cancelled') {
-    throw new UserError(`Execution ${opts.id} was cancelled.`, { code: 'execution_cancelled' });
+    throw new UserError(`Execution ${executionId} was cancelled.`, { code: 'execution_cancelled' });
   }
   if (status === 'rejected') {
-    throw new UserError(`Execution ${opts.id} was rejected before it ran.`, {
+    throw new UserError(`Execution ${executionId} was rejected before it ran.`, {
       code: 'execution_rejected',
-      details: last,
+      details: trace,
     });
   }
   // `completed_with_errors` exits 0 on purpose: the run finished, and it only
   // reaches this state when the author set `continueOnError` on the step that
   // failed — i.e. the failure was explicitly tolerated. Without that opt-in the
   // run would have ended `failed` (exit 3). Warn so it is never silent.
-  if (status === 'completed_with_errors' && !opts.json) {
+  if (status === 'completed_with_errors') {
     console.error(
       colors.yellow(
-        `! Execution ${opts.id} completed with step errors that were tolerated by continueOnError.`,
+        `! Execution ${executionId} completed with step errors that were tolerated by continueOnError.`,
       ),
     );
   }

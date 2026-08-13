@@ -506,7 +506,7 @@ const workflowsRun = new Command()
   )
   .option(
     '--show <ids:string>',
-    'Comma-separated step IDs whose outputs to print after completion ("*" for all).',
+    'Comma-separated step IDs whose outputs to include after completion ("*" for all).',
     {
       collect: true,
     },
@@ -530,7 +530,12 @@ const workflowsRun = new Command()
   .option('--show-secrets', 'Include secret values in saved trace / step output.', {
     default: false,
   })
-  .option('-j, --json', 'Emit the raw API response instead of the human table.', { default: false })
+  .option('-j, --json', 'Emit one final workflow result JSON document.', { default: false })
+  .option(
+    '--json-stream',
+    'Emit typed JSONL progress events followed by one result event.',
+    { default: false },
+  )
   .example(
     'Run a workflow with input',
     `quickflo workflows run my-wf --input '{"x":1}' -o abcd`,
@@ -566,6 +571,7 @@ const workflowsRun = new Command()
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
       json: opts.json,
+      jsonStream: opts.jsonStream,
     });
   });
 
@@ -735,10 +741,11 @@ const workflowsExecutionsTail = new Command()
     default: false,
   })
   .option(
-    '-j, --json',
-    'Emit one JSON line per poll, then the final trace JSON at the end.',
+    '--json-stream',
+    'Emit typed JSONL progress events followed by one result event.',
     { default: false },
   )
+  .option('-j, --json', 'Deprecated alias for --json-stream.', { default: false })
   .action(async (opts, id) => {
     await runWorkflowsExecutionsTail({
       id,
@@ -750,6 +757,7 @@ const workflowsExecutionsTail = new Command()
       apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
       orgId: opts.org,
       json: opts.json,
+      jsonStream: opts.jsonStream,
     });
   });
 
@@ -2879,7 +2887,9 @@ const backup = new Command()
 // Surface a JSON error envelope when any command in the tree was given -j/--json.
 // Cliffy parses per-command, so the root catch can't see per-command flags
 // directly — scan argv to honor the contract at the top-level boundary.
-const wantsJsonErrors = Deno.args.some((a) => a === '-j' || a === '--json');
+const wantsJsonErrors = Deno.args.some((a) =>
+  a === '-j' || a === '--json' || a === '--json-stream'
+);
 // -j/--json implies --quiet: machine callers want pure payload on stdout and no
 // banner chrome on stderr, so they can chain/capture without scrubbing output.
 if (wantsJsonErrors || Deno.args.some((a) => a === '--quiet')) setQuiet(true);

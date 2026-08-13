@@ -46,7 +46,7 @@ Top-level groups: `auth · workflows · packages · microapp · connections · e
 quickflo workflows list [-j] [-n <substr>] [--where f:op:v] [--tags a,b] [--templates all|only|exclude] [--order updatedAt:DESC] [--limit N] [--all] [--include-packages]
 quickflo workflows get <ref> [-j] [--by id|suid|name]      # ref auto-detects UUID/name; default emits *pushable* JSON, -j emits raw record
 quickflo workflows validate|check [file] [--from-stdin] [--strict] [-j]   # exit 3 on errors; --strict treats warnings (e.g. missing connections) as failures
-quickflo workflows run <ref> [--input '<json>' | --input-file <p> | --input-stdin] [--env <name>] [--mode sync|async] [--show ids] [--hide ids] [--timeout <s>] [--save-trace <p>] [--save-steps-to <dir>] [-j]
+quickflo workflows run <ref> [--input '<json>' | --input-file <p> | --input-stdin] [--env <name>] [--mode sync|async] [--show ids] [--hide ids] [--timeout <s>] [--save-trace <p>] [--save-steps-to <dir>] [-j | --json-stream]
 quickflo workflows steps list [-j]                          # full step-type catalog
 quickflo workflows steps get <type> [-j]                    # one step type + input/output JSON Schemas
 quickflo workflows pull -d <dir> [filters…] [--force] [--dry-run]    # download defs to disk
@@ -67,7 +67,7 @@ quickflo workflows executions list [--workflow <ref>] [--status running|success|
 quickflo workflows executions get <id> [-j]                # one execution with step paths
 quickflo workflows executions logs <id> [--step <id>] [--step-path <jsonPath>] [--full] [--show-secrets]   # one step output, or --full trace
 quickflo workflows executions download <id> [--out <p>] [--show-secrets]    # save full trace JSON
-quickflo workflows executions tail <id> [--interval 2] [--timeout <s>] [--save-trace <p>] [--save-steps-to <dir>] [-j]   # poll to terminal state; exit 124 on timeout
+quickflo workflows executions tail <id> [--interval 2] [--timeout <s>] [--save-trace <p>] [--save-steps-to <dir>] [--json-stream]   # poll to terminal state; exit 124 on timeout
 quickflo workflows executions replay <id> [--mode sync|async] [--env <name>] [--timeout <s>] [-j]   # re-run with the original input
 quickflo workflows executions cancel [ids…] [--workflow <ref>] [--status running] [--since …] [--yes] [-j]   # filter-mode cancels a matched set
 quickflo workflows executions delete [ids…] [--yes]        # soft-delete (running rows auto-cancelled); restorable
@@ -251,7 +251,7 @@ The JSON shape per entry is the log row: `timestamp, source, level, channel, ori
 2. **Read before write.** Use `get`, `logs`, `executions get/list -j` to gather facts. Inspect workflow contents with `workflows get <ref>` (pushable JSON) and the step catalog with `workflows steps get <type> -j`.
 3. **Parse with jq.** e.g. `quickflo workflows executions list --status failed --since 1d -j | jq -r '.[] | "\(.id)\t\(.startedAt)\t\(.workflowName)"'`. (Confirm the exact JSON shape from a sample before writing brittle jq.)
 4. **Build/edit via the validate loop.** Authoring or changing a workflow JSON? Follow `building-workflows.md`: write → `quickflo workflows validate <file> -j` (exit 3 = errors) → fix → re-run until clean → `push`. Warnings (e.g. a missing connection) are advisory in the loop; add `--strict` only as a final gate. Never push an unvalidated definition.
-5. **Run deliberately.** `workflows run` queues the run onto the worker pool (same path as the UI's Run button) and by default waits for completion — streaming progress to stderr and exiting with the run's status. `--mode async` returns the `executionId` immediately (tail it later with `executions tail`). Print step outputs after completion with `--show <ids>` (`--show '*'` for all). Persist evidence with `--save-trace` / `--save-steps-to` when debugging. Use `--input-file`/`--input-stdin` for non-trivial input rather than cramming JSON into the shell.
+5. **Run deliberately.** `workflows run` queues the run onto the worker pool (same path as the UI's Run button) and by default waits for completion — streaming human progress to stderr and exiting with the run's status. `-j` suppresses progress and emits exactly one versioned final result (`executionId`, `status`, `success`, `output`, and optional `steps`); use `--json-stream` only when you need typed JSONL progress events. `--mode async` returns the `executionId` immediately (tail it later with `executions tail`). Include step outputs after completion with `--show <ids>` (`--show '*'` for all). Persist evidence with `--save-trace` / `--save-steps-to` when debugging. Use `--input-file`/`--input-stdin` for non-trivial input rather than cramming JSON into the shell.
 6. **Debug a failure** (common harness loop): `executions list --status failed --since <window> -j` → pick id → **download the trace to disk and `jq` it** (see "Working with traces" below) → fetch a specific failing step with `executions logs <id> --step <stepId>` if you need just one → `executions replay <id>` to reproduce after a fix.
 
 ## Working with traces (preferred pattern)
