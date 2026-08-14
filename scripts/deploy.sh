@@ -86,6 +86,7 @@ build_and_package() {
 
   ( cd "${REPO_ROOT}" && deno compile \
       --quiet \
+      --include src/elk-worker.ts \
       --allow-net --allow-read --allow-env --allow-write \
       --target "${target}" \
       --output "${stage_dir}/${out_name}" \

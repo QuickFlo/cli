@@ -12,7 +12,8 @@
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/path@^1.0.8": "1.1.4",
     "jsr:@std/text@^1.0.17": "1.0.17",
-    "npm:@modelcontextprotocol/sdk@1": "1.29.0_zod@4.4.3_hono@4.12.24_ajv@8.20.0_express@5.2.1"
+    "npm:@modelcontextprotocol/sdk@1": "1.29.0_zod@4.4.3_hono@4.12.24_ajv@8.20.0_express@5.2.1",
+    "npm:elkjs@~0.11.1": "0.11.1"
   },
   "jsr": {
     "@cliffy/ansi@1.0.0": {
@@ -203,6 +204,9 @@
     },
     "ee-first@1.1.1": {
       "integrity": "sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow=="
+    },
+    "elkjs@0.11.1": {
+      "integrity": "sha512-zxxR9k+rx5ktMwT/FwyLdPCrq7xN6e4VGGHH8hA01vVYKjTFik7nHOxBnAYtrgYUB1RpAiLvA1/U2YraWxyKKg=="
     },
     "encodeurl@2.0.0": {
       "integrity": "sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg=="
@@ -591,7 +595,8 @@
       "jsr:@cliffy/command@1",
       "jsr:@std/assert@1",
       "jsr:@std/path@^1.0.8",
-      "npm:@modelcontextprotocol/sdk@1"
+      "npm:@modelcontextprotocol/sdk@1",
+      "npm:elkjs@~0.11.1"
     ]
   }
 }

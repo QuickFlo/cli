@@ -21,6 +21,7 @@ import {
   updateWorkflow,
   type WorkflowDefinition,
 } from './workflows-save.ts';
+import { createWorkflowLayoutEngine, formatWorkflowForPush } from './workflow-layout.ts';
 
 interface ExistingTrigger {
   id: string;
@@ -442,23 +443,29 @@ export async function runWorkflowsPush(
   const nodes: PushFileNode[] = [];
   const parsedDefs = new Map<string, WorkflowDefinition>();
   const parseErrors: Array<{ filename: string; error: Error }> = [];
-  for (const filePath of files) {
-    const filename = filePath.split('/').pop() || filePath;
-    try {
-      const raw = await Deno.readTextFile(filePath);
-      const def = JSON.parse(raw) as WorkflowDefinition;
-      if (!def.name) {
-        throw new Error(`missing 'name' field`);
+  const layoutEngine = createWorkflowLayoutEngine();
+  try {
+    for (const filePath of files) {
+      const filename = filePath.split('/').pop() || filePath;
+      try {
+        const raw = await Deno.readTextFile(filePath);
+        const parsedDef = JSON.parse(raw) as WorkflowDefinition;
+        const def = await formatWorkflowForPush(parsedDef, layoutEngine);
+        if (!def.name) {
+          throw new Error(`missing 'name' field`);
+        }
+        parsedDefs.set(filePath, def);
+        nodes.push({
+          filename: filePath,
+          def: { id: def.id, name: def.name, steps: def.steps },
+          refs: extractSubWorkflowRefs({ steps: def.steps }),
+        });
+      } catch (e) {
+        parseErrors.push({ filename, error: e as Error });
       }
-      parsedDefs.set(filePath, def);
-      nodes.push({
-        filename: filePath,
-        def: { id: def.id, name: def.name, steps: def.steps },
-        refs: extractSubWorkflowRefs({ steps: def.steps }),
-      });
-    } catch (e) {
-      parseErrors.push({ filename, error: e as Error });
     }
+  } finally {
+    layoutEngine.dispose();
   }
   for (const { filename, error } of parseErrors) {
     console.error(`  ${colors.red('✗')} ${filename}: ${error.message}`);

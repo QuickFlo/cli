@@ -161,6 +161,10 @@ quickflo workflows validate ./my-wf.json --strict -j        # warnings fail too;
 cat ./my-wf.json | quickflo workflows validate --from-stdin -o abcd
 ```
 
+`workflows push` runs the workflow builder's layered, compact graph layout and includes the
+resulting coordinates in `uiMetadata.nodePositions`. Existing saved positions and other UI metadata
+are preserved, so hand-arranged workflows are not reset.
+
 ## Agent skill
 
 Install the QuickFlo agent skill — the operating guide + workflow-authoring conventions

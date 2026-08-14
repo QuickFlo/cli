@@ -195,7 +195,7 @@ const auth = new Command()
   .command('use', authUse);
 
 const workflowsPush = new Command()
-  .description('Bulk upsert workflow definitions from a directory.')
+  .description('Auto-layout and bulk upsert workflow definitions from a directory.')
   .option(
     '-o, --org <suid:string>',
     'Organization SUID or UUID (or set QF_ORG)',
