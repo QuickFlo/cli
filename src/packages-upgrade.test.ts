@@ -1,6 +1,12 @@
 import { assertEquals, assertStringIncludes } from '@std/assert';
 import { outputPreview, printPreview } from './packages-upgrade.ts';
 
+const ansiPattern = new RegExp(
+  `${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`,
+  'g',
+);
+const stripAnsi = (value: string): string => value.replace(ansiPattern, '');
+
 const CURRENT_API_PREVIEW = {
   packageSummary: {
     slug: '@quickflo/example',
@@ -47,7 +53,7 @@ Deno.test('packages upgrade renders the current structured reinstall diff', () =
     console.error = originalError;
   }
 
-  const output = lines.join('\n');
+  const output = stripAnsi(lines.join('\n'));
   assertStringIncludes(output, 'Resource changes: 1');
   assertStringIncludes(output, '[workflow] example-workflow');
 });
