@@ -54,6 +54,18 @@ const dash: DashboardWithWidgets = {
     chartType: 'bar',
     dataSourceId: SRC_ID,
     queryConfig: { measures: [`ds_${SRC_ID.replace(/-/g, '_')}.contactedSum`] },
+    displayConfig: {
+      pivotConfig: {
+        measureFormats: {
+          [`ds_${SRC_ID.replace(/-/g, '_')}.contactedSum`]: 'percentValue',
+          contactedSum: 'percentValue',
+        },
+        heatmapTones: {
+          [`ds_${SRC_ID.replace(/-/g, '_')}.contactedSum`]: 'positive',
+          contactedSum: 'positive',
+        },
+      },
+    },
   }],
 };
 
@@ -80,4 +92,20 @@ Deno.test('schema snapshot carries both computed-field families, without server 
     direction: 'asc',
     semantic: 'lifetime',
   }]);
+});
+
+Deno.test('portable export preserves measure display metadata and rewrites qualified keys', () => {
+  const payload = buildExportPayload(dash, [source]);
+  const widgets = payload['widgets'] as Array<{ displayConfig?: Record<string, unknown> }>;
+  const displayConfig = widgets[0].displayConfig;
+  const pivotConfig = displayConfig?.['pivotConfig'] as Record<string, unknown>;
+
+  assertEquals(pivotConfig['measureFormats'], {
+    'ds-0.contactedSum': 'percentValue',
+    contactedSum: 'percentValue',
+  });
+  assertEquals(pivotConfig['heatmapTones'], {
+    'ds-0.contactedSum': 'positive',
+    contactedSum: 'positive',
+  });
 });

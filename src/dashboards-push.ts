@@ -60,7 +60,7 @@ async function readDir(dir: string): Promise<string[]> {
   return files.sort();
 }
 
-function widgetPayload(w: Record<string, unknown>): Record<string, unknown> {
+export function widgetPayload(w: Record<string, unknown>): Record<string, unknown> {
   return {
     title: w['title'],
     chartType: w['chartType'],

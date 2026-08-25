@@ -179,6 +179,17 @@ export function buildExportPayload(
           }
         }
       }
+      for (const key of ['measureFormats', 'heatmapTones']) {
+        const fieldMap = pivotConfig[key];
+        if (fieldMap && typeof fieldMap === 'object' && !Array.isArray(fieldMap)) {
+          pivotConfig[key] = Object.fromEntries(
+            Object.entries(fieldMap as Record<string, unknown>).map(([field, value]) => [
+              rewriteAliasString(field),
+              value,
+            ]),
+          );
+        }
+      }
     }
     return result;
   };

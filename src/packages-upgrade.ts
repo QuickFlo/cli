@@ -31,18 +31,57 @@ interface PackageVersionRow {
   version: string;
 }
 
+interface ReinstallResourceChange {
+  kind: string;
+  name: string;
+  change: string;
+}
+
+interface AliasRecord {
+  kind: string;
+  source: { name?: string; key?: string; alias?: string };
+}
+
 interface ReinstallPreview {
+  packageSummary: {
+    slug: string;
+    name: string;
+    version: string;
+  };
   fromVersion: string;
   toVersion: string;
-  diff: ReadonlyArray<{ kind: string; name: string; change: string }>;
+  diff: {
+    resourceChanges: ReadonlyArray<ReinstallResourceChange>;
+    newPeerDeps: {
+      connections: ReadonlyArray<unknown>;
+      sharedEnvs: ReadonlyArray<unknown>;
+      flatEnvs: ReadonlyArray<unknown>;
+      dataStoreTables: ReadonlyArray<unknown>;
+      extensionPoints: ReadonlyArray<unknown>;
+    };
+    sharedDefaultChanges: ReadonlyArray<unknown>;
+    editedResourceWarnings: ReadonlyArray<{
+      kind: string;
+      name: string;
+      lastEditedAt: string;
+    }>;
+    aliasReplay: {
+      applicable: ReadonlyArray<AliasRecord>;
+      invalidated: ReadonlyArray<{
+        alias: AliasRecord;
+        reason: string;
+      }>;
+    };
+    extensionPointBindingChanges?: ReadonlyArray<unknown>;
+  };
+  resources: ReadonlyArray<unknown>;
   peerDepDecisions: ReadonlyArray<{ kind: string; name?: string }>;
   sharedEnvKeys: ReadonlyArray<string>;
   currentBindings: Record<string, unknown>;
-  invalidAliases: ReadonlyArray<{ kind: string; name: string; reason?: string }>;
 }
 
 interface ReinstallCommitResult {
-  resourceChanges: ReadonlyArray<{ kind: string; name: string; change: string }>;
+  resourceChanges: { added: number; replaced: number; removed: number };
   installedResources: ReadonlyArray<{
     kind: string;
     id: string;
@@ -129,17 +168,18 @@ async function resolveVersion(
   return (await res.json()) as PackageVersionRow;
 }
 
-function printPreview(p: ReinstallPreview): void {
+export function printPreview(p: ReinstallPreview): void {
+  const resourceChanges = p.diff.resourceChanges;
   console.error('');
   console.error(
     `${colors.bold('Upgrade')} ${colors.dim(p.fromVersion)} → ${colors.bold(p.toVersion)}`,
   );
   console.error('');
-  if (p.diff.length === 0) {
+  if (resourceChanges.length === 0) {
     console.error(`  ${colors.dim('(no resource changes)')}`);
   } else {
-    console.error(`  Resource changes: ${colors.bold(String(p.diff.length))}`);
-    for (const d of p.diff) {
+    console.error(`  Resource changes: ${colors.bold(String(resourceChanges.length))}`);
+    for (const d of resourceChanges) {
       console.error(`    ${formatChange(d.change)} [${d.kind}] ${d.name}`);
     }
   }
@@ -157,13 +197,31 @@ function printPreview(p: ReinstallPreview): void {
       })`,
     );
   }
-  if (p.invalidAliases.length > 0) {
+  const invalidAliases = p.diff.aliasReplay.invalidated;
+  if (invalidAliases.length > 0) {
     console.error(
-      `  ${colors.yellow('!')} ${p.invalidAliases.length} invalid alias(es):`,
+      `  ${colors.yellow('!')} ${invalidAliases.length} invalid alias(es):`,
     );
-    for (const a of p.invalidAliases) {
-      console.error(`    - [${a.kind}] ${a.name}${a.reason ? `: ${a.reason}` : ''}`);
+    for (const { alias, reason } of invalidAliases) {
+      const name = alias.source.name ?? alias.source.key ?? alias.source.alias ?? '(unknown)';
+      console.error(`    - [${alias.kind}] ${name}: ${reason}`);
     }
+  }
+}
+
+export function outputPreview(
+  preview: ReinstallPreview,
+  opts: Pick<PackagesUpgradeOptions, 'apply' | 'json'>,
+): void {
+  if (opts.json) {
+    if (!opts.apply) console.log(JSON.stringify(preview, null, 2));
+    return;
+  }
+
+  printPreview(preview);
+  if (!opts.apply) {
+    console.error('');
+    console.error(colors.dim('Preview only. Re-run with --apply to commit.'));
   }
 }
 
@@ -217,14 +275,9 @@ export async function runPackagesUpgrade(
       body: JSON.stringify({ incomingPackageVersionId: target.id }),
     },
   );
-  printPreview(preview);
+  outputPreview(preview, opts);
 
   if (!opts.apply) {
-    console.error('');
-    console.error(
-      colors.dim('Preview only. Re-run with --apply to commit.'),
-    );
-    if (opts.json) console.log(JSON.stringify(preview, null, 2));
     return;
   }
 
@@ -243,6 +296,9 @@ export async function runPackagesUpgrade(
       }),
     },
   );
-  printCommitResult(result);
-  if (opts.json) console.log(JSON.stringify(result, null, 2));
+  if (opts.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    printCommitResult(result);
+  }
 }
