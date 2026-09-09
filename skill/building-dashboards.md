@@ -124,9 +124,75 @@ Filters apply BEFORE aggregation (SQL `WHERE`), including on calculated fields �
 - `funnel` — ordered stage drop-off.
 - `table` — raw rows, many columns. Good default for detail.
 - `stats-table` — one row per dimension value, several measure columns (leaderboards).
-- `pivot-table` — two dimensions (rows × columns), a measure in the cells.
+- `pivot-table` — dimension values or metrics as rows, a dimension as columns; see Pivot formatting and heatmaps below.
 
 Layout is a 12-column grid: stat-cards read well at `w=3 h=2`, charts at `w=6 h=4`, tables/pivots at `w=12 h=5`.
+
+## Pivot formatting and heatmaps
+
+Read this when creating or editing a pivot, setting color targets, or explaining heatmap colors.
+Formatting belongs in the widget's `displayConfig.pivotConfig`; query fields remain in `queryConfig`.
+Copy source aliases and measure keys from the discovered schema. The `ds_example` references below are illustrative.
+
+### Choose the pivot orientation
+
+- **Field values** (`measureOrientation: "cells"`, the default): select row and column dimensions in `queryConfig.dimensions`; set `rowDimension` and `columnDimension` in `pivotConfig`. The first selected measure supplies cell values. Use the singular `heatmapTone` and `heatmapScale` settings.
+- **Metrics** (`measureOrientation: "rows"`): select measures in `queryConfig.measures` and one column dimension in `queryConfig.dimensions`; set `columnDimension` in `pivotConfig`. Use `measureFormats`, `heatmapTones`, and `heatmapScales` maps keyed by each selected measure. Prefer fully qualified measure keys; short keys are also supported. Each metric can have its own units, direction, and scale.
+
+Metric-row example, for a query selecting `ds_example.conversionRateAvg` and `ds_example.campaign`:
+
+```json
+{
+  "pivotConfig": {
+    "measureOrientation": "rows",
+    "columnDimension": "ds_example.campaign",
+    "cellFormatting": "heatmap",
+    "measureFormats": { "ds_example.conversionRateAvg": "percent" },
+    "heatmapTones": { "ds_example.conversionRateAvg": "positive" },
+    "heatmapScales": {
+      "ds_example.conversionRateAvg": {
+        "mode": "fixed",
+        "lower": 5,
+        "midpoint": 10,
+        "upper": 15
+      }
+    }
+  }
+}
+```
+
+For field-value pivots, use these singular settings within `pivotConfig`:
+
+```json
+{
+  "cellFormatting": "heatmap",
+  "heatmapTone": "negative",
+  "heatmapScale": { "mode": "fixed", "lower": 1, "midpoint": 3, "upper": 5 }
+}
+```
+
+### Color meaning and scale are separate choices
+
+Set `cellFormatting: "heatmap"` to enable color, or `"none"` to disable it.
+
+- `positive` — **Higher is favorable**: lower is red, midpoint is uncolored, upper is green.
+- `negative` — **Higher is unfavorable**: lower is green, midpoint is uncolored, upper is red.
+- `neutral` — magnitude only: light to dark, without good/bad meaning.
+
+**Compare with peers:** omit the scale or set `mode: "peers"`. The observed minimum and maximum determine colors, separately within each metric row or across a field-value table. Colors can change with filters and date range; an identical-valued range has no heatmap shading.
+
+**Fixed limits:** set `mode: "fixed"` and all three finite numeric limits, with `lower < midpoint < upper`. Colors blend separately from lower to midpoint and midpoint to upper. Values at or below lower use the lower-end color; values at or above upper use the upper-end color. Identical-valued rows still receive their target-based color. Blank cells and totals are not heatmapped.
+
+For example, `negative` with limits 99, 99.5, 100 makes every value at or below 99 strongly green, including 0. Choose targets from the user's stated goal or known metric definition. If those targets are unknown, ask for them or use peer comparison; label example targets as examples.
+
+### Units and ratio cells
+
+`measureFormats` supports `number`, `percent` (raw fraction, 0–1), `percentValue` (raw percentage, 0–100), and `duration` (raw seconds).
+**Fixed limits use displayed percentage points for both percentage formats:** enter `15` for 15%, even when the raw value is `0.15`. Duration limits are in seconds; number limits use the raw numeric units.
+
+For field-value ratio cells, set `cellDisplay` to `{ "mode": "ratio", "numerator": "<qualified measure>", "denominator": "<qualified measure>", "format": "percent" }`; include both measures in the query. The same percentage-point rule applies. To switch back to ordinary measure values, explicitly replace `cellDisplay` with `{ "mode": "measure" }` so a saved ratio is cleared.
+
+When editing, preserve unrelated display options and other metrics' settings. Verify the query's values and units before choosing limits; successful query validation alone does not validate color targets.
 
 ## The verify → check → push loop (do not skip)
 

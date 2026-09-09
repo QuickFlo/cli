@@ -576,8 +576,11 @@ quickflo workflows executions tail <execution-id> \
 # Tail as typed JSONL (one compact event per line)
 quickflo workflows executions tail <execution-id> --json-stream
 
-# Re-run with the same initial input
+# Queue an exact rerun using the server-pinned trigger input
 quickflo workflows executions replay <execution-id>
+
+# Return the new execution ID immediately instead of waiting
+quickflo workflows executions replay <execution-id> --mode async
 ```
 
 ### Validate before pushing

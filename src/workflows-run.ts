@@ -30,7 +30,7 @@ import {
   WORKFLOW_RUN_RESULT_SCHEMA_VERSION,
 } from './workflow-run-result.ts';
 
-interface ExecuteQueuedResponse {
+export interface QueuedWorkflowRunResponse {
   status: string;
   executionId: string;
 }
@@ -164,28 +164,29 @@ export interface WorkflowsRunOptions {
   jsonStream?: boolean;
 }
 
-export async function runWorkflowsRun(opts: WorkflowsRunOptions): Promise<void> {
-  if (opts.json && opts.jsonStream) {
-    throw new UserError('--json and --json-stream are mutually exclusive.');
-  }
-  const { client } = await openSession(opts, 'workflows run');
-  const ref = await resolveWorkflowRef(client, opts.ref, opts.by);
+export interface CompleteQueuedWorkflowRunOptions {
+  mode?: 'sync' | 'async';
+  timeout?: number;
+  show?: string[];
+  hide?: string[];
+  saveTrace?: string;
+  saveStepsTo?: string;
+  showSecrets?: boolean;
+  json?: boolean;
+  jsonStream?: boolean;
+  label?: string;
+}
 
-  const initial = readInput(opts);
-  const body: { initial: Record<string, unknown>; environment?: string } = { initial };
-  // Server-side precedence: body.environment overrides the workflow's stored
-  // definition.environment without persisting; omit to use the stored one.
-  if (opts.env !== undefined) body.environment = opts.env;
-
-  // Always queue (explicit mode=async) — same call the UI Run button makes.
-  // A workflow configured executionMode=sync must not hold this request open
-  // or execute on the serving instance.
-  const queued = await apiFetch<ExecuteQueuedResponse>(
-    client,
-    `/workflows/${ref.id}/execute?mode=async`,
-    { method: 'POST', body: JSON.stringify(body) },
-  );
-
+/**
+ * Render or wait for a run that the server has already queued. Workflow runs
+ * and execution replays share this client-side behavior; only their queueing
+ * endpoints differ.
+ */
+export async function completeQueuedWorkflowRun(
+  client: ApiClient,
+  queued: QueuedWorkflowRunResponse,
+  opts: CompleteQueuedWorkflowRunOptions,
+): Promise<void> {
   if (opts.mode === 'async') {
     if (opts.saveTrace || opts.saveStepsTo) {
       throw new UserError(
@@ -224,7 +225,7 @@ export async function runWorkflowsRun(opts: WorkflowsRunOptions): Promise<void> 
   // one JSON result, while explicit stream mode emits one compact object/line.
   const started = Date.now();
   if (!opts.json && !opts.jsonStream) {
-    console.error(colors.dim(`queued ${ref.name} → ${queued.executionId}`));
+    console.error(colors.dim(`queued ${opts.label ?? 'workflow'} → ${queued.executionId}`));
   }
   const trace = await tailExecution(client, {
     id: queued.executionId,
@@ -261,4 +262,28 @@ export async function runWorkflowsRun(opts: WorkflowsRunOptions): Promise<void> 
   }
 
   assertExecutionSucceeded(trace, queued.executionId);
+}
+
+export async function runWorkflowsRun(opts: WorkflowsRunOptions): Promise<void> {
+  if (opts.json && opts.jsonStream) {
+    throw new UserError('--json and --json-stream are mutually exclusive.');
+  }
+  const { client } = await openSession(opts, 'workflows run');
+  const ref = await resolveWorkflowRef(client, opts.ref, opts.by);
+
+  const initial = readInput(opts);
+  const body: { initial: Record<string, unknown>; environment?: string } = { initial };
+  // Server-side precedence: body.environment overrides the workflow's stored
+  // definition.environment without persisting; omit to use the stored one.
+  if (opts.env !== undefined) body.environment = opts.env;
+
+  // Always queue (explicit mode=async) — same call the UI Run button makes.
+  // A workflow configured executionMode=sync must not hold this request open
+  // or execute on the serving instance.
+  const queued = await apiFetch<QueuedWorkflowRunResponse>(
+    client,
+    `/workflows/${ref.id}/execute?mode=async`,
+    { method: 'POST', body: JSON.stringify(body) },
+  );
+  await completeQueuedWorkflowRun(client, queued, { ...opts, label: ref.name });
 }

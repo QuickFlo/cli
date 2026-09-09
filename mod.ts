@@ -693,13 +693,12 @@ const workflowsExecutionsDownload = new Command()
   });
 
 const workflowsExecutionsReplay = new Command()
-  .description('Re-run a workflow with the same initial input as the original execution.')
+  .description('Queue an exact server-side rerun with the original trigger input.')
   .type('runMode', runModeType)
   .arguments('<id:string>')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('--mode <m:runMode>', 'Execution mode.', { default: 'sync' as const })
-  .option('--env <name:string>', 'Override the workflow environment used for variable resolution.')
   .option('--timeout <seconds:number>', 'Client-side timeout (sync mode only).')
   .option('--show <ids:string>', 'Comma-separated step IDs to include in the per-step output.', {
     collect: true,
@@ -712,7 +711,6 @@ const workflowsExecutionsReplay = new Command()
     await runWorkflowsExecutionsReplay({
       id,
       mode: opts.mode,
-      env: opts.env,
       timeout: opts.timeout,
       show: opts.show?.flatMap((s: string) => s.split(',')),
       hide: opts.hide?.flatMap((s: string) => s.split(',')),
@@ -3155,7 +3153,7 @@ const logs = new Command()
 try {
   await new Command()
     .name('quickflo')
-    .version('1.5.0')
+    .version('1.23.4')
     .description('QuickFlo command-line interface.')
     .globalOption('--quiet', 'Suppress progress output; errors still print to stderr.', {
       action: () => setQuiet(true),

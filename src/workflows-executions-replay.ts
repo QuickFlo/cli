@@ -1,48 +1,19 @@
 /**
- * `quickflo workflows executions replay <id>` — re-execute a workflow with
- * the same `initial` it had on the original execution. Reads the stored
- * trace, locates the input under known fields (`metadata.initial`, root
- * `initial`, or `__input__` step output), then delegates to `runWorkflowsRun`.
+ * `quickflo workflows executions replay <id>` — ask the server to queue an
+ * exact rerun of a terminal execution, then either return the new execution ID
+ * or wait for it using the same completion path as `workflows run`.
  *
- * If the input isn't where we expect, fails with a clear message asking the
- * user to pass `--input` / `--input-file` explicitly.
+ * The server owns source authorization and recovery of the pinned trigger
+ * input. The CLI deliberately does not download or interpret trace data.
  */
 
-import { apiFetch } from './api.ts';
+import { type ApiClient, apiFetch } from './api.ts';
 import { openSession } from './session.ts';
-import { UserError } from './errors.ts';
-import { runWorkflowsRun } from './workflows-run.ts';
-
-interface ExecutionTrace {
-  id: string;
-  workflowId?: string;
-  workflowName?: string;
-  workflowSuid?: string;
-  metadata?: Record<string, unknown> & { initial?: Record<string, unknown> };
-  initial?: Record<string, unknown>;
-}
-
-function locateInitial(trace: unknown): Record<string, unknown> | undefined {
-  if (!trace || typeof trace !== 'object') return undefined;
-  const t = trace as Record<string, unknown>;
-  const candidates: unknown[] = [
-    t['initial'],
-    (t['metadata'] as Record<string, unknown> | undefined)?.['initial'],
-    (t['steps'] as Record<string, unknown> | undefined)?.['__input__'],
-    (t['stepResults'] as Record<string, unknown> | undefined)?.['__input__'],
-  ];
-  for (const c of candidates) {
-    if (c && typeof c === 'object' && !Array.isArray(c)) {
-      return c as Record<string, unknown>;
-    }
-  }
-  return undefined;
-}
+import { completeQueuedWorkflowRun, type QueuedWorkflowRunResponse } from './workflows-run.ts';
 
 export interface WorkflowsExecutionsReplayOptions {
   id: string;
   mode?: 'sync' | 'async';
-  env?: string;
   timeout?: number;
   show?: string[];
   hide?: string[];
@@ -51,42 +22,28 @@ export interface WorkflowsExecutionsReplayOptions {
   json?: boolean;
 }
 
+export function queueExecutionReplay(
+  client: ApiClient,
+  sourceExecutionId: string,
+): Promise<QueuedWorkflowRunResponse> {
+  return apiFetch<QueuedWorkflowRunResponse>(
+    client,
+    `/workflows/rerun/${encodeURIComponent(sourceExecutionId)}`,
+    { method: 'POST' },
+  );
+}
+
 export async function runWorkflowsExecutionsReplay(
   opts: WorkflowsExecutionsReplayOptions,
 ): Promise<void> {
   const { client } = await openSession(opts, 'workflows executions replay');
-  const trace = await apiFetch<ExecutionTrace>(client, `/execution-traces/${opts.id}`);
-  let initial = locateInitial(trace);
-
-  if (!initial) {
-    const data = await apiFetch<unknown>(
-      client,
-      `/execution-traces/${opts.id}/trace-data`,
-    );
-    initial = locateInitial(data);
-  }
-
-  if (!initial) {
-    throw new UserError(
-      `Could not locate the original \`initial\` input in execution ${opts.id}. ` +
-        `Pass it explicitly via \`workflows run <wf> --input '{...}'\`.`,
-    );
-  }
-  if (!trace.workflowId && !trace.workflowSuid && !trace.workflowName) {
-    throw new UserError(`Execution ${opts.id} has no associated workflow reference.`);
-  }
-
-  const ref = trace.workflowSuid ?? trace.workflowId ?? trace.workflowName!;
-  await runWorkflowsRun({
-    ref,
-    input: JSON.stringify(initial),
+  const queued = await queueExecutionReplay(client, opts.id);
+  await completeQueuedWorkflowRun(client, queued, {
     mode: opts.mode,
-    env: opts.env,
     timeout: opts.timeout,
     show: opts.show,
     hide: opts.hide,
-    apiUrl: opts.apiUrl,
-    orgId: opts.orgId,
     json: opts.json,
+    label: `replay of ${opts.id}`,
   });
 }

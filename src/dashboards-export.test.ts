@@ -64,6 +64,16 @@ const dash: DashboardWithWidgets = {
           [`ds_${SRC_ID.replace(/-/g, '_')}.contactedSum`]: 'positive',
           contactedSum: 'positive',
         },
+        heatmapScale: { mode: 'fixed', lower: 5, midpoint: 10, upper: 15 },
+        heatmapScales: {
+          [`ds_${SRC_ID.replace(/-/g, '_')}.contactedSum`]: {
+            mode: 'fixed',
+            lower: 5,
+            midpoint: 10,
+            upper: 15,
+          },
+          contactedSum: { mode: 'peers', lower: null, midpoint: null, upper: null },
+        },
       },
     },
   }],
@@ -107,5 +117,30 @@ Deno.test('portable export preserves measure display metadata and rewrites quali
   assertEquals(pivotConfig['heatmapTones'], {
     'ds-0.contactedSum': 'positive',
     contactedSum: 'positive',
+  });
+  assertEquals(pivotConfig['heatmapScale'], { mode: 'fixed', lower: 5, midpoint: 10, upper: 15 });
+  assertEquals(pivotConfig['heatmapScales'], {
+    'ds-0.contactedSum': { mode: 'fixed', lower: 5, midpoint: 10, upper: 15 },
+    contactedSum: { mode: 'peers', lower: null, midpoint: null, upper: null },
+  });
+  assertEquals(dash.widgets[0].displayConfig?.['pivotConfig'], {
+    ...pivotConfig,
+    measureFormats: {
+      [`ds_${SRC_ID.replace(/-/g, '_')}.contactedSum`]: 'percentValue',
+      contactedSum: 'percentValue',
+    },
+    heatmapTones: {
+      [`ds_${SRC_ID.replace(/-/g, '_')}.contactedSum`]: 'positive',
+      contactedSum: 'positive',
+    },
+    heatmapScales: {
+      [`ds_${SRC_ID.replace(/-/g, '_')}.contactedSum`]: {
+        mode: 'fixed',
+        lower: 5,
+        midpoint: 10,
+        upper: 15,
+      },
+      contactedSum: { mode: 'peers', lower: null, midpoint: null, upper: null },
+    },
   });
 });

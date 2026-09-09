@@ -6,6 +6,10 @@ Deno.test('native push preserves nested pivot measure display metadata', () => {
     pivotConfig: {
       measureFormats: { count: 'number', serviceLevelPercentAvg: 'percentValue' },
       heatmapTones: { count: 'neutral', serviceLevelPercentAvg: 'positive' },
+      heatmapScale: { mode: 'fixed', lower: 5, midpoint: 10, upper: 15 },
+      heatmapScales: {
+        serviceLevelPercentAvg: { mode: 'fixed', lower: 80, midpoint: 90, upper: 95 },
+      },
     },
   };
 
