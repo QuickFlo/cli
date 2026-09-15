@@ -9,8 +9,13 @@
 #   ./install.sh cursor [dir]   QuickFlo agent skill → ~/.cursor/skills/quickflo
 #   ./install.sh codex [dir]    QuickFlo agent skill → ~/.agents/skills/quickflo
 #   ./install.sh claude [dir]   QuickFlo agent skill → ~/.claude/skills/quickflo
+#   ./install.sh shared [dir]   QuickFlo agent skill → ~/.agents/skills/quickflo
+#   ./install.sh shared --scope project   → .agents/skills/quickflo under cwd
 #   ./install.sh agents [file]   AGENTS.md (Codex / agents.md)   → file (default ./AGENTS.md)
 #   ./install.sh mcp             print the MCP host-config snippet
+#
+# Skill installs default to --scope global (user home); --scope user is an alias.
+# A final directory overrides the scope destination. Exports do not accept scope.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 

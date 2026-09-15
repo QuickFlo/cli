@@ -1,5 +1,5 @@
 /**
- * `quickflo skill install [harness] [target]` — materialize the QuickFlo agent
+ * `quickflo skill install [harness] [target] [--scope global|project]` — materialize the QuickFlo agent
  * skill from the guides EMBEDDED in this CLI (`src/skill-guides.ts`), so it
  * installs with no repo checkout and no network. The repo's `skill/install.sh`
  * delegates here, so there is exactly one adapter implementation.
@@ -19,7 +19,12 @@ const DESC = 'Drive the QuickFlo platform from the terminal with the `quickflo` 
   'workflows, executions, step catalog, dashboards and data sources, triggers, ' +
   'connections, environments, data-stores, packages.';
 const ARGUMENT_HINT = 'what you want to do (e.g. "list failed runs today")';
-const SKILL_ROOTS = { claude: '.claude', cursor: '.cursor', codex: '.agents' } as const;
+const SKILL_ROOTS = {
+  claude: '.claude',
+  cursor: '.cursor',
+  codex: '.agents',
+  shared: '.agents',
+} as const;
 
 const MCP_SNIPPET = `Add the QuickFlo MCP server to your host config (Claude Desktop/Code, Cursor,
 Codex ~/.codex/config.toml [mcp_servers], …). Run \`quickflo auth login\` first.
@@ -38,19 +43,32 @@ function home(): string {
 }
 
 export interface SkillInstallOptions {
-  /** claude | cursor | codex | agents | mcp. Defaults to claude for compatibility. */
+  /** claude | cursor | codex | shared | agents | mcp. Defaults to claude for compatibility. */
   harness?: string;
-  /** Target directory (skill) or file (agents). Defaults per harness. */
+  /** Target directory (skill) or file (agents). Overrides the scope's destination. */
   target?: string;
+  /** Global (default) uses the home directory; project uses cwd. User aliases global. */
+  scope?: 'global' | 'project' | 'user';
 }
 
 export async function runSkillInstall(opts: SkillInstallOptions): Promise<void> {
   const harness = (opts.harness || 'claude').toLowerCase();
+  const scope = opts.scope ?? 'global';
+  if (!['global', 'project', 'user'].includes(scope)) {
+    throw new Error(`Unknown scope "${scope}". Use: global | project (user aliases global).`);
+  }
+  if (opts.scope !== undefined && (harness === 'agents' || harness === 'mcp')) {
+    throw new Error(
+      `--scope is only supported for skill targets: claude | cursor | codex | shared. The ${harness} export does not use a skill directory.`,
+    );
+  }
   switch (harness) {
     case 'claude':
     case 'cursor':
-    case 'codex': {
-      const dir = opts.target || join(home(), SKILL_ROOTS[harness], 'skills', NAME);
+    case 'codex':
+    case 'shared': {
+      const dir = opts.target ||
+        join(scope === 'project' ? Deno.cwd() : home(), SKILL_ROOTS[harness], 'skills', NAME);
       await Deno.mkdir(dir, { recursive: true });
       // JSON.stringify emits a double-quoted YAML scalar: DESC contains `: ` and
       // the hint contains quotes, both of which break a plain (unquoted) scalar.
@@ -93,6 +111,8 @@ ${invocationTask}`;
       return;
     }
     default:
-      throw new Error(`Unknown harness "${harness}". Use: claude | cursor | codex | agents | mcp.`);
+      throw new Error(
+        `Unknown harness "${harness}". Use: claude | cursor | codex | shared | agents | mcp.`,
+      );
   }
 }

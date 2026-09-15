@@ -17,6 +17,7 @@ The guides ship **embedded in the `quickflo` CLI**, so install needs no repo and
 quickflo skill install cursor     # ~/.cursor/skills/quickflo
 quickflo skill install codex      # ~/.agents/skills/quickflo
 quickflo skill install claude     # ~/.claude/skills/quickflo (also the default)
+quickflo skill install shared     # ~/.agents/skills/quickflo (shared skill directory)
 quickflo skill install agents     # operating guide → ./AGENTS.md
 quickflo skill install mcp        # print the MCP host-config snippet
 
@@ -24,9 +25,19 @@ quickflo skill install mcp        # print the MCP host-config snippet
 deno run -A jsr:@quickflo/cli skill install cursor
 ```
 
-The same commands work on Windows; the default folders are relative to the user's home directory (`%USERPROFILE%` when `HOME` is unset). Pass a final directory to override a skill's location, for example `quickflo skill install cursor ./my-skills/quickflo`. All skill targets write `SKILL.md` and both companion guides. The no-argument default stays at `~/.claude/skills/quickflo` for compatibility.
+**Global is the default:** installs go in the user's home directory and apply across projects. The same commands work on Windows (`%USERPROFILE%` when `HOME` is unset). `--scope global` makes the default explicit; `--scope user` is an alias.
 
-From a repo checkout, `./install.sh [harness] [target]` re-embeds from the canonical `*.md` in this directory (`deno task bundle:guides`), then delegates to `quickflo skill install` — one adapter implementation, repo and repo-less.
+To install in a project, run from that project's directory:
+
+```sh
+quickflo skill install shared --scope project
+```
+
+Project scope uses the current working directory: `.agents/skills/quickflo` for `shared` or `codex`, `.cursor/skills/quickflo` for `cursor`, and `.claude/skills/quickflo` for `claude`. The `shared` target follows the [shared skill directory convention](https://agentskills.io/client-implementation/adding-skills-support#where-to-scan) for agents that scan `.agents/skills`.
+
+Pass the complete skill directory as a final argument to override either scope, for example `quickflo skill install cursor ./my-skills/quickflo`. All skill targets write `SKILL.md` and both companion guides. The no-argument default stays at `~/.claude/skills/quickflo` for compatibility. `agents` still exports an `AGENTS.md` file; `agents` and `mcp` do not accept `--scope`.
+
+From a repo checkout, `./install.sh [harness] [target] [--scope global|project]` re-embeds from the canonical `*.md` in this directory (`deno task bundle:guides`), then delegates to `quickflo skill install` — one adapter implementation, repo and repo-less. Project scope uses the directory from which you run the script.
 
 ## How "agnostic" works: two channels
 
@@ -35,7 +46,7 @@ From a repo checkout, `./install.sh [harness] [target]` re-embeds from the canon
 
 | Harness | Mechanism | Loading |
 | --- | --- | --- |
-| Cursor, Codex | `SKILL.md` (Agent Skills standard) | lazy (description-gated) |
+| Cursor, Codex, shared | `SKILL.md` (Agent Skills standard) | lazy (description-gated) |
 | Claude Code | `SKILL.md` plus Claude Code invocation metadata | lazy (description-gated) |
 | agents.md agents | `AGENTS.md` | eager (always-on) |
 | Any MCP host (Cursor, …) | `quickflo mcp` server | tools + on-demand resources |

@@ -2894,22 +2894,37 @@ if (wantsJsonErrors || Deno.args.some((a) => a === '--quiet')) setQuiet(true);
 
 const skillInstall = new Command()
   .description(
-    'Install the QuickFlo agent skill from the guides embedded in this CLI (no repo or network needed). harness = claude (default) | cursor | codex | agents (AGENTS.md) | mcp (prints host config).',
+    'Install the QuickFlo agent skill from the guides embedded in this CLI (no repo or network needed). harness = claude (default) | cursor | codex | shared (.agents/skills) | agents (AGENTS.md export) | mcp (prints host config). Skill installs are global by default. A target path overrides the scope destination.',
   )
   .arguments('[harness:string] [target:string]')
+  .type('skillScope', new EnumType(['global', 'project', 'user']))
+  .option(
+    '--scope <scope:skillScope>',
+    'Skill destination: global (default, home directory) or project (current directory). user aliases global. Applies to skill targets only.',
+  )
   .example('Cursor → ~/.cursor/skills/quickflo', 'quickflo skill install cursor')
   .example('Codex → ~/.agents/skills/quickflo', 'quickflo skill install codex')
   .example('Claude Code → ~/.claude/skills/quickflo (default)', 'quickflo skill install claude')
+  .example('Shared → ~/.agents/skills/quickflo', 'quickflo skill install shared')
+  .example('Shared, explicit global scope', 'quickflo skill install shared --scope global')
+  .example(
+    'Shared, current project → .agents/skills/quickflo',
+    'quickflo skill install shared --scope project',
+  )
+  .example(
+    'Cursor, current project → .cursor/skills/quickflo',
+    'quickflo skill install cursor --scope project',
+  )
   .example('Custom skill directory', 'quickflo skill install cursor ./my-skills/quickflo')
   .example('AGENTS.md operating guide', 'quickflo skill install agents ./AGENTS.md')
   .example('Print MCP host config', 'quickflo skill install mcp')
-  .action(async (_opts, harness, target) => {
-    await runSkillInstall({ harness, target });
+  .action(async (opts, harness, target) => {
+    await runSkillInstall({ harness, target, scope: opts.scope });
   });
 
 const skill = new Command()
   .description(
-    'Install QuickFlo agent skills for Cursor, Codex, or Claude Code; export AGENTS.md or MCP config.',
+    'Install QuickFlo agent skills for Cursor, Codex, Claude Code, or a shared skills directory; export AGENTS.md or MCP config.',
   )
   .action(function () {
     this.showHelp();

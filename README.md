@@ -175,6 +175,7 @@ installs need no repo checkout and no network:
 quickflo skill install cursor     # ~/.cursor/skills/quickflo
 quickflo skill install codex      # ~/.agents/skills/quickflo
 quickflo skill install claude     # ~/.claude/skills/quickflo (also the default)
+quickflo skill install shared     # ~/.agents/skills/quickflo (shared skill directory)
 quickflo skill install agents     # operating guide → ./AGENTS.md
 quickflo skill install mcp        # print the MCP host-config snippet
 
@@ -184,21 +185,30 @@ deno run -A jsr:@quickflo/cli skill install cursor
 
 Each skill install writes `SKILL.md`, `building-workflows.md`, and `building-dashboards.md`.
 
-| Harness            | Default destination                    | Loading                     |
-| ------------------ | -------------------------------------- | --------------------------- |
-| `cursor`           | `~/.cursor/skills/quickflo/`           | on demand                   |
-| `codex`            | `~/.agents/skills/quickflo/`           | on demand                   |
-| `claude` (default) | `~/.claude/skills/quickflo/`           | on demand                   |
-| `agents`           | `./AGENTS.md` (operating guide only)   | always-on                   |
-| `mcp`              | prints the MCP host config (see below) | tools + on-demand resources |
+**Global is the default:** the skill is available across projects for your user account. To install for one project, run from that project's directory:
 
-The same commands work on macOS, Linux, and Windows. On Windows, `~` above means your user profile directory (for example, `C:\Users\Alex`). To override the destination, pass a final path:
+```sh
+quickflo skill install shared --scope project
+```
+
+| Skill target       | Global (default)             | Project (`--scope project`) |
+| ------------------ | ---------------------------- | --------------------------- |
+| `cursor`           | `~/.cursor/skills/quickflo/` | `.cursor/skills/quickflo/`  |
+| `codex`            | `~/.agents/skills/quickflo/` | `.agents/skills/quickflo/`  |
+| `claude` (default) | `~/.claude/skills/quickflo/` | `.claude/skills/quickflo/`  |
+| `shared`           | `~/.agents/skills/quickflo/` | `.agents/skills/quickflo/`  |
+
+`shared` uses the [shared skill directory convention](https://agentskills.io/client-implementation/adding-skills-support#where-to-scan) for agents that discover `.agents/skills`. It writes the same standard skill as `codex`. Project paths are relative to the current working directory. You can pass `--scope global` explicitly; `--scope user` is an alias for global.
+
+The `agents` target exports the operating guide to `./AGENTS.md`, which agents load as always-on instructions. The `mcp` target prints host configuration. These exports do not accept `--scope`; pass a final file path to choose where `agents` writes.
+
+The same commands work on macOS, Linux, and Windows. On Windows, `~` above means your user profile directory (for example, `C:\Users\Alex`). To override the destination for either scope, pass the complete skill directory as a final path:
 
 ```powershell
 quickflo skill install cursor "$env:USERPROFILE\.cursor\skills\quickflo"
 ```
 
-`quickflo skill install` keeps the existing Claude Code destination for compatibility. Cursor and Codex installs use standard agent-skill metadata; the `claude` option also includes Claude Code's invocation metadata. See the [Cursor skill locations](https://cursor.com/docs/context/skills) and [Codex skill locations](https://learn.chatgpt.com/docs/build-skills#where-to-save-skills).
+`quickflo skill install` keeps the existing Claude Code destination for compatibility. Cursor, Codex, and shared installs use standard agent-skill metadata; the `claude` option also includes Claude Code's invocation metadata. See the [Cursor skill locations](https://cursor.com/docs/context/skills) and [Codex skill locations](https://learn.chatgpt.com/docs/build-skills#where-to-save-skills).
 
 For **tools**, prefer the MCP server below — it serves these same guides as `quickflo://`
 resources, so MCP hosts get the how-to with no skill file.
