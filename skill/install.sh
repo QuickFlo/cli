@@ -5,8 +5,10 @@
 # shared with the repo-less path (`quickflo skill install` /
 # `deno run -A jsr:@quickflo/cli skill install`).
 #
-#   ./install.sh                 Claude skill → ~/.claude/skills/quickflo
-#   ./install.sh claude [dir]    Claude skill → dir
+#   ./install.sh                QuickFlo agent skill → ~/.claude/skills/quickflo (default)
+#   ./install.sh cursor [dir]   QuickFlo agent skill → ~/.cursor/skills/quickflo
+#   ./install.sh codex [dir]    QuickFlo agent skill → ~/.agents/skills/quickflo
+#   ./install.sh claude [dir]   QuickFlo agent skill → ~/.claude/skills/quickflo
 #   ./install.sh agents [file]   AGENTS.md (Codex / agents.md)   → file (default ./AGENTS.md)
 #   ./install.sh mcp             print the MCP host-config snippet
 set -euo pipefail

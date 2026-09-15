@@ -7,6 +7,7 @@
  * Diagnostics → stderr; only the `mcp` config snippet (the payload) → stdout.
  */
 
+import { join } from '@std/path';
 import { AGENT_GUIDE, BUILDING_DASHBOARDS, BUILDING_WORKFLOWS } from './skill-guides.ts';
 
 const NAME = 'quickflo';
@@ -18,6 +19,7 @@ const DESC = 'Drive the QuickFlo platform from the terminal with the `quickflo` 
   'workflows, executions, step catalog, dashboards and data sources, triggers, ' +
   'connections, environments, data-stores, packages.';
 const ARGUMENT_HINT = 'what you want to do (e.g. "list failed runs today")';
+const SKILL_ROOTS = { claude: '.claude', cursor: '.cursor', codex: '.agents' } as const;
 
 const MCP_SNIPPET = `Add the QuickFlo MCP server to your host config (Claude Desktop/Code, Cursor,
 Codex ~/.codex/config.toml [mcp_servers], …). Run \`quickflo auth login\` first.
@@ -36,38 +38,38 @@ function home(): string {
 }
 
 export interface SkillInstallOptions {
-  /** claude | agents | mcp. Defaults to claude. */
+  /** claude | cursor | codex | agents | mcp. Defaults to claude for compatibility. */
   harness?: string;
-  /** Target dir (claude) or file (agents). Defaults per harness. */
+  /** Target directory (skill) or file (agents). Defaults per harness. */
   target?: string;
 }
 
 export async function runSkillInstall(opts: SkillInstallOptions): Promise<void> {
   const harness = (opts.harness || 'claude').toLowerCase();
   switch (harness) {
-    case 'claude': {
-      const dir = opts.target || `${home()}/.claude/skills/quickflo`;
+    case 'claude':
+    case 'cursor':
+    case 'codex': {
+      const dir = opts.target || join(home(), SKILL_ROOTS[harness], 'skills', NAME);
       await Deno.mkdir(dir, { recursive: true });
       // JSON.stringify emits a double-quoted YAML scalar: DESC contains `: ` and
       // the hint contains quotes, both of which break a plain (unquoted) scalar.
+      const invocationMetadata = harness === 'claude'
+        ? `user-invocable: true\nargument-hint: ${JSON.stringify(ARGUMENT_HINT)}\n`
+        : '';
+      const invocationTask = harness === 'claude' ? '\n## Your task\n\n$ARGUMENTS\n' : '';
       const skillMd = `---
 name: ${NAME}
 description: ${JSON.stringify(DESC)}
-user-invocable: true
-argument-hint: ${JSON.stringify(ARGUMENT_HINT)}
----
+${invocationMetadata}---
 
 ${AGENT_GUIDE}
-
-## Your task
-
-$ARGUMENTS
-`;
+${invocationTask}`;
       await Deno.writeTextFile(`${dir}/SKILL.md`, skillMd);
       await Deno.writeTextFile(`${dir}/building-workflows.md`, BUILDING_WORKFLOWS);
       await Deno.writeTextFile(`${dir}/building-dashboards.md`, BUILDING_DASHBOARDS);
       console.error(
-        `Installed Claude skill → ${dir}/{SKILL.md,building-workflows.md,building-dashboards.md}`,
+        `Installed QuickFlo agent skill → ${dir}/{SKILL.md,building-workflows.md,building-dashboards.md}`,
       );
       return;
     }
@@ -91,6 +93,6 @@ $ARGUMENTS
       return;
     }
     default:
-      throw new Error(`Unknown harness "${harness}". Use: claude | agents | mcp.`);
+      throw new Error(`Unknown harness "${harness}". Use: claude | cursor | codex | agents | mcp.`);
   }
 }

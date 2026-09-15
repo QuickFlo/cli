@@ -14,25 +14,30 @@ Edit these. Everything else is generated.
 The guides ship **embedded in the `quickflo` CLI**, so install needs no repo and no network:
 
 ```bash
-quickflo skill install                               # Claude skill → ~/.claude/skills/quickflo
-quickflo skill install agents ~/.codex/AGENTS.md     # Codex / agents.md
-quickflo skill install mcp                           # print the MCP host-config snippet
+quickflo skill install cursor     # ~/.cursor/skills/quickflo
+quickflo skill install codex      # ~/.agents/skills/quickflo
+quickflo skill install claude     # ~/.claude/skills/quickflo (also the default)
+quickflo skill install agents     # operating guide → ./AGENTS.md
+quickflo skill install mcp        # print the MCP host-config snippet
 
 # No quickflo yet? One shot, no repo:
-deno run -A jsr:@quickflo/cli skill install
+deno run -A jsr:@quickflo/cli skill install cursor
 ```
+
+The same commands work on Windows; the default folders are relative to the user's home directory (`%USERPROFILE%` when `HOME` is unset). Pass a final directory to override a skill's location, for example `quickflo skill install cursor ./my-skills/quickflo`. All skill targets write `SKILL.md` and both companion guides. The no-argument default stays at `~/.claude/skills/quickflo` for compatibility.
 
 From a repo checkout, `./install.sh [harness] [target]` re-embeds from the canonical `*.md` in this directory (`deno task bundle:guides`), then delegates to `quickflo skill install` — one adapter implementation, repo and repo-less.
 
 ## How "agnostic" works: two channels
 
 - **Tools → MCP.** `quickflo mcp` is the cross-harness tool standard — the same server works in Claude Desktop/Code, Cursor, Codex, and any MCP host. It also serves this guide (server `instructions` + `quickflo://` resources), so MCP hosts get the how-to with no extra file. This is the most portable channel.
-- **Knowledge → markdown.** The two canonical docs above. Per-harness differences are only frontmatter / filename / location, which `install.sh` applies:
+- **Knowledge → markdown.** The three canonical guides above. Per-harness differences are only invocation metadata, filename, and location, which `src/skill-install.ts` applies:
 
 | Harness | Mechanism | Loading |
 | --- | --- | --- |
-| Claude Code/Desktop/claude.ai | `SKILL.md` (Anthropic Skills) | lazy (description-gated) |
-| Codex + agents.md agents | `AGENTS.md` | eager (always-on) |
+| Cursor, Codex | `SKILL.md` (Agent Skills standard) | lazy (description-gated) |
+| Claude Code | `SKILL.md` plus Claude Code invocation metadata | lazy (description-gated) |
+| agents.md agents | `AGENTS.md` | eager (always-on) |
 | Any MCP host (Cursor, …) | `quickflo mcp` server | tools + on-demand resources |
 
 Because `AGENTS.md` is eager, the `agents` adapter ships only the operating guide and defers the heavy authoring guide to on-demand (the `building-workflows.md` file / `quickflo://building-workflows` MCP resource).

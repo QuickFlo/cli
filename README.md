@@ -172,19 +172,33 @@ for driving this CLI — into any agent harness. The guides ship **embedded in t
 installs need no repo checkout and no network:
 
 ```bash
-quickflo skill install                               # Claude skill → ~/.claude/skills/quickflo
-quickflo skill install agents ~/.codex/AGENTS.md     # Codex / agents.md
-quickflo skill install mcp                           # print the MCP host-config snippet
+quickflo skill install cursor     # ~/.cursor/skills/quickflo
+quickflo skill install codex      # ~/.agents/skills/quickflo
+quickflo skill install claude     # ~/.claude/skills/quickflo (also the default)
+quickflo skill install agents     # operating guide → ./AGENTS.md
+quickflo skill install mcp        # print the MCP host-config snippet
 
 # No quickflo installed yet? One shot, no repo:
-deno run -A jsr:@quickflo/cli skill install
+deno run -A jsr:@quickflo/cli skill install cursor
 ```
 
-| Harness            | What it writes                                                       | Loading                     |
-| ------------------ | -------------------------------------------------------------------- | --------------------------- |
-| `claude` (default) | `SKILL.md` + `building-workflows.md` in `~/.claude/skills/quickflo/` | lazy (description-gated)    |
-| `agents`           | `AGENTS.md` (Codex: `~/.codex/AGENTS.md`, or repo root)              | eager (always-on)           |
-| `mcp`              | prints the MCP host config (see below)                               | tools + on-demand resources |
+Each skill install writes `SKILL.md`, `building-workflows.md`, and `building-dashboards.md`.
+
+| Harness            | Default destination                    | Loading                     |
+| ------------------ | -------------------------------------- | --------------------------- |
+| `cursor`           | `~/.cursor/skills/quickflo/`           | on demand                   |
+| `codex`            | `~/.agents/skills/quickflo/`           | on demand                   |
+| `claude` (default) | `~/.claude/skills/quickflo/`           | on demand                   |
+| `agents`           | `./AGENTS.md` (operating guide only)   | always-on                   |
+| `mcp`              | prints the MCP host config (see below) | tools + on-demand resources |
+
+The same commands work on macOS, Linux, and Windows. On Windows, `~` above means your user profile directory (for example, `C:\Users\Alex`). To override the destination, pass a final path:
+
+```powershell
+quickflo skill install cursor "$env:USERPROFILE\.cursor\skills\quickflo"
+```
+
+`quickflo skill install` keeps the existing Claude Code destination for compatibility. Cursor and Codex installs use standard agent-skill metadata; the `claude` option also includes Claude Code's invocation metadata. See the [Cursor skill locations](https://cursor.com/docs/context/skills) and [Codex skill locations](https://learn.chatgpt.com/docs/build-skills#where-to-save-skills).
 
 For **tools**, prefer the MCP server below — it serves these same guides as `quickflo://`
 resources, so MCP hosts get the how-to with no skill file.
