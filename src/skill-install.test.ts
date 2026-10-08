@@ -1,6 +1,11 @@
 import { assert, assertEquals, assertRejects, assertStringIncludes } from '@std/assert';
 import { join } from '@std/path';
-import { AGENT_GUIDE, BUILDING_DASHBOARDS, BUILDING_WORKFLOWS } from './skill-guides.ts';
+import {
+  AGENT_GUIDE,
+  BUILDING_DASHBOARDS,
+  BUILDING_PACKAGES,
+  BUILDING_WORKFLOWS,
+} from './skill-guides.ts';
 import { runSkillInstall, type SkillInstallOptions } from './skill-install.ts';
 
 const PROJECT_DIRECTORY = '/work/project with spaces/nested';
@@ -62,9 +67,10 @@ Deno.test('Cursor, Codex, and shared install complete standard skills in their d
     const result = await captureInstall({ harness });
     const directory = join('/home/example', root, 'skills', 'quickflo');
     assertEquals(result.directories, [directory]);
-    assertEquals(result.files.size, 3);
+    assertEquals(result.files.size, 4);
     assertEquals(result.files.get(`${directory}/building-workflows.md`), BUILDING_WORKFLOWS);
     assertEquals(result.files.get(`${directory}/building-dashboards.md`), BUILDING_DASHBOARDS);
+    assertEquals(result.files.get(`${directory}/building-packages.md`), BUILDING_PACKAGES);
     const skill = result.files.get(`${directory}/SKILL.md`) ?? '';
     assertStringIncludes(skill, '---\nname: quickflo\ndescription: ');
     assertStringIncludes(skill, AGENT_GUIDE);
@@ -112,9 +118,10 @@ Deno.test('project scope writes all guides under cwd for every skill target', as
     const result = await captureInstall({ harness, scope: 'project' }, {});
     const directory = join(PROJECT_DIRECTORY, root, 'skills', 'quickflo');
     assertEquals(result.directories, [directory]);
-    assertEquals(result.files.size, 3);
+    assertEquals(result.files.size, 4);
     assertEquals(result.files.get(`${directory}/building-workflows.md`), BUILDING_WORKFLOWS);
     assertEquals(result.files.get(`${directory}/building-dashboards.md`), BUILDING_DASHBOARDS);
+    assertEquals(result.files.get(`${directory}/building-packages.md`), BUILDING_PACKAGES);
     const skill = result.files.get(`${directory}/SKILL.md`) ?? '';
     assertStringIncludes(skill, AGENT_GUIDE);
     assertEquals(skill.includes('user-invocable: true'), root === '.claude');
@@ -128,7 +135,7 @@ Deno.test('explicit skill paths override every scope without appending another d
     for (const scope of [undefined, 'global', 'user', 'project'] as const) {
       const custom = await captureInstall({ harness, scope, target: './my skills/quickflo' }, {});
       assertEquals(custom.directories, ['./my skills/quickflo']);
-      assertEquals(custom.files.size, 3);
+      assertEquals(custom.files.size, 4);
       assert(custom.files.has('./my skills/quickflo/SKILL.md'));
     }
   }

@@ -29,6 +29,7 @@ import { runPackagesListVersions } from './src/packages-versions.ts';
 import { runPackagesUninstall } from './src/packages-uninstall.ts';
 import { runPackagesUpgrade } from './src/packages-upgrade.ts';
 import { runPackagesInit } from './src/packages-init.ts';
+import { createPackagesSettingsCommand } from './src/packages-settings-command.ts';
 import { runMicroappNew } from './src/microapp-new.ts';
 import { runMicroappStripeSync } from './src/microapp-stripe-sync.ts';
 import { runConnectionsList } from './src/connections-list.ts';
@@ -1338,6 +1339,7 @@ const packages = new Command()
   )
   .command('list', packagesList)
   .command('list-versions', packagesListVersions)
+  .command('settings', createPackagesSettingsCommand())
   .command('install', packagesInstall)
   .command('uninstall', packagesUninstall)
   .command('upgrade', packagesUpgrade)

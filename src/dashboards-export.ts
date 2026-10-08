@@ -27,6 +27,73 @@ function sourceAlias(id: string): string {
   return `ds_${id.replace(/-/g, '_')}`;
 }
 
+// Keep semantic reference slots in parity with workflows current-snapshot-presentation.
+// Literal values, labels, and forced-highlight map keys must never be rewritten.
+function rewriteRealTimeFields(
+  displayConfig: Record<string, unknown>,
+  remap: (field: string) => string,
+): void {
+  function record(value: unknown): Record<string, unknown> | undefined {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+    return undefined;
+  }
+  function fields(value: unknown, keys: readonly string[]): void {
+    const target = record(value);
+    if (!target) {
+      return;
+    }
+    for (const key of keys) {
+      const field = target[key];
+      if (typeof field === 'string') {
+        target[key] = remap(field);
+      }
+    }
+  }
+  function overrides(categories: unknown): void {
+    if (!Array.isArray(categories)) {
+      return;
+    }
+    for (const category of categories) {
+      fields(record(category)?.['thresholdOverrides'], ['field']);
+    }
+  }
+  function elapsed(value: unknown): void {
+    const column = record(value);
+    fields(column, ['category', 'since', 'detail']);
+    overrides(column?.['categories']);
+  }
+
+  const snapshot = record(displayConfig['currentSnapshot']);
+  const columns = snapshot?.['columns'];
+  if (Array.isArray(columns)) {
+    for (let index = 0; index < columns.length; index += 1) {
+      const column = columns[index];
+      if (typeof column === 'string') {
+        columns[index] = remap(column);
+      } else {
+        const config = record(column);
+        if (config?.['type'] === 'field') {
+          fields(config, ['field']);
+          fields(record(config['highlight'])?.['thresholdOverrides'], [
+            'field',
+          ]);
+        } else if (config?.['type'] === 'elapsed-time') {
+          elapsed(config);
+        }
+      }
+    }
+  }
+  fields(snapshot?.['fields'], ['key', 'label']);
+  elapsed(snapshot?.['elapsedTime']);
+  for (const key of ['stateDuration', 'stateColumns']) {
+    const legacy = record(displayConfig[key]);
+    fields(legacy?.['fields'], ['key', 'label', 'state', 'since', 'detail']);
+    overrides(legacy?.['states']);
+  }
+}
+
 export function buildExportPayload(
   dash: DashboardWithWidgets,
   allSources: DashboardDataSource[],
@@ -191,6 +258,7 @@ export function buildExportPayload(
         }
       }
     }
+    rewriteRealTimeFields(result, rewriteAliasString);
     return result;
   };
 

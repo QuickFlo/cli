@@ -7,6 +7,8 @@ Teach any AI agent harness to drive QuickFlo. **One canonical source, thin per-h
 - **`building-workflows.md`** — the deep workflow-authoring guide (definition format, LiquidJS, tool-workflow contract).
 - **`building-dashboards.md`** — the deep dashboard-authoring guide (field refs, filtering, chart types, the verify→check→push loop, the silent-zero-rows traps).
 
+- **`building-packages.md`** — package publishing and settings authoring (field labels, help, controls, requiredness), plus installed settings edits.
+
 Edit these. Everything else is generated.
 
 ## Install
@@ -35,14 +37,14 @@ quickflo skill install shared --scope project
 
 Project scope uses the current working directory: `.agents/skills/quickflo` for `shared` or `codex`, `.cursor/skills/quickflo` for `cursor`, and `.claude/skills/quickflo` for `claude`. The `shared` target follows the [shared skill directory convention](https://agentskills.io/client-implementation/adding-skills-support#where-to-scan) for agents that scan `.agents/skills`.
 
-Pass the complete skill directory as a final argument to override either scope, for example `quickflo skill install cursor ./my-skills/quickflo`. All skill targets write `SKILL.md` and both companion guides. The no-argument default stays at `~/.claude/skills/quickflo` for compatibility. `agents` still exports an `AGENTS.md` file; `agents` and `mcp` do not accept `--scope`.
+Pass the complete skill directory as a final argument to override either scope, for example `quickflo skill install cursor ./my-skills/quickflo`. All skill targets write `SKILL.md` and all three companion guides. The no-argument default stays at `~/.claude/skills/quickflo` for compatibility. `agents` still exports an `AGENTS.md` file; `agents` and `mcp` do not accept `--scope`.
 
 From a repo checkout, `./install.sh [harness] [target] [--scope global|project]` re-embeds from the canonical `*.md` in this directory (`deno task bundle:guides`), then delegates to `quickflo skill install` — one adapter implementation, repo and repo-less. Project scope uses the directory from which you run the script.
 
 ## How "agnostic" works: two channels
 
 - **Tools → MCP.** `quickflo mcp` is the cross-harness tool standard — the same server works in Claude Desktop/Code, Cursor, Codex, and any MCP host. It also serves this guide (server `instructions` + `quickflo://` resources), so MCP hosts get the how-to with no extra file. This is the most portable channel.
-- **Knowledge → markdown.** The three canonical guides above. Per-harness differences are only invocation metadata, filename, and location, which `src/skill-install.ts` applies:
+- **Knowledge → markdown.** The four canonical guides above. Per-harness differences are only invocation metadata, filename, and location, which `src/skill-install.ts` applies:
 
 | Harness | Mechanism | Loading |
 | --- | --- | --- |

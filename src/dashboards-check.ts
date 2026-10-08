@@ -50,6 +50,7 @@ export interface ValidatableWidgetPayload {
   title?: string;
   dataSourceId: string;
   queryConfig: Record<string, unknown>;
+  displayConfig?: unknown;
 }
 
 /**
@@ -69,6 +70,7 @@ export function toValidatePayload(
       ...(typeof title === 'string' ? { title } : {}),
       dataSourceId: typeof dataSourceId === 'string' ? dataSourceId : '',
       queryConfig: (w['queryConfig'] ?? {}) as Record<string, unknown>,
+      ...(w['displayConfig'] !== undefined ? { displayConfig: w['displayConfig'] } : {}),
     };
   });
   return { widgets };

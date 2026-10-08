@@ -68,7 +68,7 @@ function assignFilenames(dashboards: DashboardWithWidgets[]): Map<string, string
   return result;
 }
 
-function buildFileShape(
+export function buildFileShape(
   dash: DashboardWithWidgets,
   sourcesById: Map<string, DashboardDataSource>,
 ): Record<string, unknown> {

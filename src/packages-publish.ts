@@ -27,8 +27,9 @@ import { colors } from '@cliffy/ansi/colors';
 import { resolve as resolvePath } from '@std/path';
 import { type ApiClient, apiFetch } from './api.ts';
 import { openSession } from './session.ts';
+import type { PackageSettingsSource } from './packages-settings.types.ts';
 
-type PublishRoot =
+export type PublishRoot =
   | { kind: 'workflow' | 'sub-workflow'; workflowTemplateId: string }
   | { kind: 'trigger'; triggerId: string }
   | {
@@ -36,6 +37,7 @@ type PublishRoot =
     tableName: string;
     includeSeedRows?: boolean;
     seedRowLimit?: number;
+    settingsSource?: PackageSettingsSource;
   }
   | { kind: 'dashboard'; dashboardId: string };
 
@@ -299,7 +301,26 @@ export async function runPackagesPublish(
   }
 
   const cliRoots = (opts.roots ?? []).map(parseRootFlag);
+  if (
+    cliRoots.length && descriptor?.roots.some(
+      (root) => root.kind === 'data-store-table' && root.settingsSource !== undefined,
+    )
+  ) {
+    throw new Error(
+      'Do not combine --root with a settings descriptor: --root replaces all descriptor roots. Edit the descriptor roots instead.',
+    );
+  }
   const roots = cliRoots.length > 0 ? cliRoots : descriptor?.roots ?? [];
+  for (const root of roots) {
+    if (
+      root.kind === 'data-store-table' && root.settingsSource !== undefined &&
+      root.includeSeedRows !== true
+    ) {
+      throw new Error(
+        `Settings table "${root.tableName}" requires includeSeedRows: true in the descriptor.`,
+      );
+    }
+  }
   if (roots.length === 0) {
     throw new Error(
       'At least one --root <kind>:<value> is required (or "roots" in --descriptor)',

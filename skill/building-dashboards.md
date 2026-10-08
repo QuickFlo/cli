@@ -235,3 +235,105 @@ Lean on these; they are the reason to work here.
 7. **Explain** non-obvious choices (chart type, filter logic, calc fields).
 
 Ambiguous request → ask before building. If no org/auth is available, say so rather than guessing field names.
+
+## Real-time stats tables and field-dependent thresholds
+
+Use `chartType: "stats-table"` and `displayConfig.currentSnapshot` for the latest
+record values. Inspect the source schema, distinct values, and actual query rows
+before choosing fields or rule values. The examples below assume those fields
+exist; replace `ds_SOURCE` with the source's actual analytics alias. Include every
+presentation input in `queryConfig.dimensions`, even a hidden discriminator.
+Do not aggregate those dimensions into measures.
+
+A numeric temperature column can have defaults plus different limits per model:
+
+```json
+{
+  "queryConfig": { "dimensions": ["ds_SOURCE.id", "ds_SOURCE.temperature", "ds_SOURCE.model"] },
+  "displayConfig": {
+    "currentSnapshot": {
+      "recipe": "current-snapshot",
+      "fields": { "key": "ds_SOURCE.id" },
+      "defaultView": "over-limit",
+      "columns": [{
+        "type": "field", "field": "ds_SOURCE.temperature", "label": "Temperature",
+        "highlight": {
+          "mode": "absolute", "direction": "high", "warningAt": 70, "criticalAt": 90,
+          "thresholdOverrides": {
+            "field": "ds_SOURCE.model",
+            "rules": [{ "value": "Model A", "warning": 80, "critical": 95 }]
+          }
+        }
+      }]
+    }
+  }
+}
+```
+
+Elapsed columns place overrides inside each category. Here waiting tickets use
+five/ten minutes by default; urgent tickets use one/two minutes:
+
+```json
+{
+  "queryConfig": { "dimensions": ["ds_SOURCE.id", "ds_SOURCE.status", "ds_SOURCE.statusSince", "ds_SOURCE.priority"] },
+  "displayConfig": {
+    "currentSnapshot": {
+      "recipe": "current-snapshot",
+      "fields": { "key": "ds_SOURCE.id" },
+      "defaultView": "all",
+      "columns": [{
+        "type": "elapsed-time", "category": "ds_SOURCE.status", "since": "ds_SOURCE.statusSince",
+        "severity": { "mode": "absolute" },
+        "categories": [{
+          "value": "Waiting", "label": "Waiting", "warningAfterMs": 300000, "criticalAfterMs": 600000,
+          "thresholdOverrides": {
+            "field": "ds_SOURCE.priority",
+            "rules": [{ "value": "Urgent", "warning": 60000, "critical": 120000 }]
+          }
+        }]
+      }]
+    }
+  }
+}
+```
+
+- Numeric limits use the source value's native units (including percentages).
+  Both limits are required. `high` means `warning <= critical`; `low` means
+  `warning >= critical`. Equality triggers the alert.
+- Elapsed defaults **and override limits are milliseconds**, finite nonnegative
+  integers. An omitted elapsed limit disables that severity. A matching rule
+  replaces the whole pair; it does not inherit an omitted limit.
+- One exact scalar field per override set, at most 100 unique rules. Match raw
+  strings, finite numbers, or booleans; `0`, `"0"`, `false`, and `"false"` are
+  different. The distinct-values endpoint returns strings: inspect query rows
+  for the actual wire type. Ordinary boolean dimensions can arrive as strings.
+  Unknown, null, and missing values use defaults. Remove a rule to inherit again.
+- The same reason under different elapsed categories can have different limits.
+  Reason codes, model names and policy limits must come from the dataset and user;
+  they are not built-in QuickFlo/Five9 concepts.
+- `since` must measure the interval the policy means. If a reason changes without
+  changing state, a state-start timestamp does not measure time in the new reason.
+  Verify upstream timestamp resets before rollout; thresholds do not fix timestamps.
+- `defaultView: "over-limit"` saves the filtered view; `"all"` saves all rows.
+  Viewers can change their local view. Filtering uses any eligible fixed limit,
+  including low numeric limits. Peer highlighting and forced highlight colors do
+  not define membership. Preserve unrelated display settings on edits.
+- Copy/paste, native pull/push, portable export/import, and package publish/install
+  retain policies and the saved default. Cross-org imports remap field references,
+  **not** raw rule values: target source values must match or be explicitly edited.
+
+Validate the complete native file before applying it (push dry-run is a change
+preview, not threshold validation):
+
+```bash
+quickflo dashboards check ./dashboards/live.json -j
+quickflo dashboards push -d ./dashboards --dry-run
+quickflo dashboards push -d ./dashboards
+```
+
+Release together with server/UI support for field-dependent thresholds. The CLI
+must include displayConfig validation forwarding and real-time export remapping;
+older clients/servers may silently omit validation or lose references. These
+changes are developed against CLI 1.24.0; the installed binary can differ from the
+checkout. Use a release containing these changes, not the version number alone.
+Regenerate bundled guides with `deno task bundle:guides` after editing this guide.

@@ -59,6 +59,7 @@ Deno.test('maps a pulled dashboard file to the validate payload', () => {
       title: 'Calls by campaign',
       dataSourceId: 'ds_abc',
       queryConfig: { dimensions: ['ds_abc.CAMPAIGN TYPE'] },
+      displayConfig: { legend: true },
     },
   ]);
 });
@@ -90,4 +91,20 @@ Deno.test('forwards a widget missing dataSourceId rather than dropping it', () =
 
 Deno.test('yields no widgets for a file without a widgets array', () => {
   assertEquals(toValidatePayload({ name: 'Empty' }).widgets, []);
+});
+
+Deno.test('forwards malformed display settings so the server can reject them', () => {
+  for (
+    const displayConfig of [null, 'invalid', {
+      currentSnapshot: {
+        columns: [{ thresholdOverrides: { rules: [{ value: 0, warning: -1 }] } }],
+      },
+    }]
+  ) {
+    assertEquals(
+      toValidatePayload({ widgets: [{ dataSourceId: 'source', displayConfig }] }).widgets[0]
+        .displayConfig,
+      displayConfig,
+    );
+  }
 });

@@ -1,0 +1,223 @@
+{
+  "source": {
+    "id": "11111111-1111-1111-1111-111111111111",
+    "name": "Threshold fixture",
+    "type": "custom",
+    "recordSchema": {
+      "name": "Threshold fixture",
+      "fields": {
+        "id": {
+          "label": "id",
+          "type": "string"
+        },
+        "rate": {
+          "label": "rate",
+          "type": "number"
+        },
+        "priority": {
+          "label": "priority",
+          "type": "string"
+        },
+        "state": {
+          "label": "state",
+          "type": "string"
+        },
+        "since": {
+          "label": "since",
+          "type": "date"
+        },
+        "reason": {
+          "label": "reason",
+          "type": "string"
+        }
+      }
+    }
+  },
+  "dashboard": {
+    "id": "33333333-3333-3333-3333-333333333333",
+    "name": "Threshold fixture",
+    "layout": [],
+    "widgets": [
+      {
+        "id": "44444444-4444-4444-4444-444444444444",
+        "title": "Live",
+        "chartType": "stats-table",
+        "dataSourceId": "11111111-1111-1111-1111-111111111111",
+        "queryConfig": {
+          "dimensions": [
+            "ds_11111111_1111_1111_1111_111111111111.rate",
+            "ds_11111111_1111_1111_1111_111111111111.priority",
+            "ds_11111111_1111_1111_1111_111111111111.state",
+            "ds_11111111_1111_1111_1111_111111111111.since",
+            "ds_11111111_1111_1111_1111_111111111111.reason",
+            "ds_11111111_1111_1111_1111_111111111111.id"
+          ]
+        },
+        "displayConfig": {
+          "currentSnapshot": {
+            "recipe": "current-snapshot",
+            "defaultView": "over-limit",
+            "fields": {
+              "key": "ds_11111111_1111_1111_1111_111111111111.id"
+            },
+            "columns": [
+              {
+                "type": "field",
+                "field": "ds_11111111_1111_1111_1111_111111111111.rate",
+                "label": "ds_11111111_1111_1111_1111_111111111111.reason",
+                "highlight": {
+                  "mode": "absolute",
+                  "direction": "low",
+                  "warningAt": 80,
+                  "criticalAt": 60,
+                  "thresholdOverrides": {
+                    "field": "ds_11111111_1111_1111_1111_111111111111.priority",
+                    "rules": [
+                      {
+                        "value": "ds_11111111_1111_1111_1111_111111111111.reason",
+                        "warning": 30,
+                        "critical": 20
+                      },
+                      {
+                        "value": 0,
+                        "warning": 40,
+                        "critical": 10
+                      },
+                      {
+                        "value": false,
+                        "warning": 50,
+                        "critical": 15
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "elapsed-time",
+                "category": "ds_11111111_1111_1111_1111_111111111111.state",
+                "since": "ds_11111111_1111_1111_1111_111111111111.since",
+                "severity": {
+                  "mode": "absolute"
+                },
+                "categories": [
+                  {
+                    "value": "Not Ready",
+                    "label": "Not Ready",
+                    "warningAfterMs": 60000,
+                    "criticalAfterMs": 120000,
+                    "thresholdOverrides": {
+                      "field": "ds_11111111_1111_1111_1111_111111111111.reason",
+                      "rules": [
+                        {
+                          "value": "Meal",
+                          "warning": 1800000,
+                          "critical": 2100000
+                        },
+                        {
+                          "value": "ds_11111111_1111_1111_1111_111111111111.reason",
+                          "warning": 1000,
+                          "critical": 2000
+                        },
+                        {
+                          "value": "Off"
+                        }
+                      ]
+                    },
+                    "detailOverrides": {
+                      "ds_11111111_1111_1111_1111_111111111111.reason": "none"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "tableConfig": {
+            "pageSize": 50
+          }
+        }
+      }
+    ]
+  },
+  "portableDisplay": {
+    "currentSnapshot": {
+      "recipe": "current-snapshot",
+      "defaultView": "over-limit",
+      "fields": {
+        "key": "ds-0.id"
+      },
+      "columns": [
+        {
+          "type": "field",
+          "field": "ds-0.rate",
+          "label": "ds_11111111_1111_1111_1111_111111111111.reason",
+          "highlight": {
+            "mode": "absolute",
+            "direction": "low",
+            "warningAt": 80,
+            "criticalAt": 60,
+            "thresholdOverrides": {
+              "field": "ds-0.priority",
+              "rules": [
+                {
+                  "value": "ds_11111111_1111_1111_1111_111111111111.reason",
+                  "warning": 30,
+                  "critical": 20
+                },
+                {
+                  "value": 0,
+                  "warning": 40,
+                  "critical": 10
+                },
+                {
+                  "value": false,
+                  "warning": 50,
+                  "critical": 15
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "elapsed-time",
+          "category": "ds-0.state",
+          "since": "ds-0.since",
+          "severity": {
+            "mode": "absolute"
+          },
+          "categories": [
+            {
+              "value": "Not Ready",
+              "label": "Not Ready",
+              "warningAfterMs": 60000,
+              "criticalAfterMs": 120000,
+              "thresholdOverrides": {
+                "field": "ds-0.reason",
+                "rules": [
+                  {
+                    "value": "Meal",
+                    "warning": 1800000,
+                    "critical": 2100000
+                  },
+                  {
+                    "value": "ds_11111111_1111_1111_1111_111111111111.reason",
+                    "warning": 1000,
+                    "critical": 2000
+                  },
+                  {
+                    "value": "Off"
+                  }
+                ]
+              },
+              "detailOverrides": {
+                "ds_11111111_1111_1111_1111_111111111111.reason": "none"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "tableConfig": {
+      "pageSize": 50
+    }
+  }
+}

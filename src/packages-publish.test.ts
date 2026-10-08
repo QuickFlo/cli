@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertThrows } from '@std/assert';
+import { assert, assertEquals, assertRejects, assertThrows } from '@std/assert';
 import type { ApiClient } from './api.ts';
 import {
   canonicalizeSlug,
@@ -191,4 +191,76 @@ Deno.test('packages publish stores README while auto-creating the package', asyn
     version: '1.0.0',
     roots: [{ kind: 'workflow', workflowTemplateId: 'workflow-id' }],
   });
+});
+
+Deno.test('publish preserves the documented settings descriptor through the API boundary', async () => {
+  // Exercise the actual guide example so authoring docs cannot silently lose settings metadata.
+  const guide = await Deno.readTextFile(new URL('../skill/building-packages.md', import.meta.url));
+  const example = guide.match(/```json\n([\s\S]*?)\n```/);
+  assert(example);
+  const descriptor = JSON.parse(example[1]);
+  const calls: ApiCall[] = [];
+  const dependencies = testDependencies((path, init) => {
+    recordCall(calls, path, init);
+    if (path.startsWith('/packages?')) {
+      return { data: [{ id: 'package-id', slug: '@quickflo/example', name: 'Example' }] };
+    }
+    return publishResponse('package-id');
+  });
+  dependencies.readTextFile = () => Promise.resolve(JSON.stringify(descriptor));
+  await runPackagesPublish(
+    { packageRef: '@quickflo/example', descriptor: 'publish.json' },
+    dependencies,
+  );
+  assertEquals(calls.at(-1)?.body, descriptor);
+});
+
+Deno.test('publish rejects settings without shipped data before mutating the package shell', async () => {
+  for (const includeSeedRows of [undefined, false]) {
+    const calls: ApiCall[] = [];
+    const dependencies = testDependencies((path, init) => recordCall(calls, path, init));
+    dependencies.readTextFile = () =>
+      Promise.resolve(JSON.stringify({
+        version: '1.0.0',
+        readme: 'new README',
+        roots: [{
+          kind: 'data-store-table',
+          tableName: 'settings',
+          settingsSource: {},
+          includeSeedRows,
+        }],
+      }));
+    await assertRejects(
+      () => runPackagesPublish({ packageRef: 'example', descriptor: 'publish.json' }, dependencies),
+      Error,
+      'includeSeedRows: true',
+    );
+    assertEquals(calls, []);
+  }
+});
+
+Deno.test('publish refuses --root replacement that would discard descriptor settings', async () => {
+  const calls: ApiCall[] = [];
+  const dependencies = testDependencies((path, init) => recordCall(calls, path, init));
+  dependencies.readTextFile = () =>
+    Promise.resolve(JSON.stringify({
+      version: '1.0.0',
+      roots: [{
+        kind: 'data-store-table',
+        tableName: 'settings',
+        settingsSource: {},
+        includeSeedRows: true,
+      }],
+    }));
+  await assertRejects(
+    () =>
+      runPackagesPublish({
+        packageRef: 'example',
+        descriptor: 'publish.json',
+        roots: ['workflow:id'],
+      }, dependencies),
+    Error,
+    '--root replaces all descriptor roots',
+  );
+  assertEquals(calls, []);
 });

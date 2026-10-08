@@ -39,7 +39,12 @@ import { type ApiClient, apiFetch, type ResolvedOrg, resolveOrganization } from 
 import { probeToken, resolveSession } from './auth.ts';
 import { dataSourceAliasToId, dataSourceIdToAlias, fetchDataSources } from './dashboards-refs.ts';
 import { saveWorkflow, type WorkflowDefinition } from './workflows-save.ts';
-import { AGENT_GUIDE, BUILDING_DASHBOARDS, BUILDING_WORKFLOWS } from './skill-guides.ts';
+import {
+  AGENT_GUIDE,
+  BUILDING_DASHBOARDS,
+  BUILDING_PACKAGES,
+  BUILDING_WORKFLOWS,
+} from './skill-guides.ts';
 
 const SERVER_NAME = 'quickflo';
 const SERVER_VERSION = '0.1.0';
@@ -63,11 +68,20 @@ const SERVER_INSTRUCTIONS =
   'Read the `quickflo://agent-guide` resource for the full operating guide (auth, ' +
   'execution debugging, search-attribute filtering), `quickflo://building-workflows` ' +
   'for the workflow-authoring guide, and `quickflo://building-dashboards` for the ' +
-  'dashboard-authoring guide.\n' +
+  'dashboard-authoring guide. For package authoring or installed settings, read ' +
+  '`quickflo://building-packages` (field presentation, publish descriptors, revisions).\n' +
   'Validation warnings (e.g. a connection that does not exist yet) are advisory, not blocking.';
 
 // Embedded skill guides served as resources (see skill/bundle-guides.ts).
 const RESOURCES = [
+  {
+    uri: 'quickflo://building-packages',
+    name: 'QuickFlo package-authoring and settings guide',
+    description:
+      'Publish package settings with deliberate field labels, help, controls and requiredness; configure installed records with revision checks.',
+    mimeType: 'text/markdown',
+    text: BUILDING_PACKAGES,
+  },
   {
     uri: 'quickflo://agent-guide',
     name: 'QuickFlo agent guide',

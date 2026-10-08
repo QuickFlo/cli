@@ -8,7 +8,12 @@
  */
 
 import { join } from '@std/path';
-import { AGENT_GUIDE, BUILDING_DASHBOARDS, BUILDING_WORKFLOWS } from './skill-guides.ts';
+import {
+  AGENT_GUIDE,
+  BUILDING_DASHBOARDS,
+  BUILDING_PACKAGES,
+  BUILDING_WORKFLOWS,
+} from './skill-guides.ts';
 
 const NAME = 'quickflo';
 // Kept short on purpose: harnesses list every skill's description in the system
@@ -17,7 +22,7 @@ const NAME = 'quickflo';
 // evict other skills. Trigger words only; the detail lives in AGENT_GUIDE below.
 const DESC = 'Drive the QuickFlo platform from the terminal with the `quickflo` command: ' +
   'workflows, executions, step catalog, dashboards and data sources, triggers, ' +
-  'connections, environments, data-stores, packages.';
+  'connections, environments, data-stores, package authoring and settings.';
 const ARGUMENT_HINT = 'what you want to do (e.g. "list failed runs today")';
 const SKILL_ROOTS = {
   claude: '.claude',
@@ -86,8 +91,9 @@ ${invocationTask}`;
       await Deno.writeTextFile(`${dir}/SKILL.md`, skillMd);
       await Deno.writeTextFile(`${dir}/building-workflows.md`, BUILDING_WORKFLOWS);
       await Deno.writeTextFile(`${dir}/building-dashboards.md`, BUILDING_DASHBOARDS);
+      await Deno.writeTextFile(`${dir}/building-packages.md`, BUILDING_PACKAGES);
       console.error(
-        `Installed QuickFlo agent skill → ${dir}/{SKILL.md,building-workflows.md,building-dashboards.md}`,
+        `Installed QuickFlo agent skill → ${dir}/{SKILL.md,building-workflows.md,building-dashboards.md,building-packages.md}`,
       );
       return;
     }
@@ -97,8 +103,8 @@ ${invocationTask}`;
       // heavy authoring guide to on-demand.
       const content = '> QuickFlo operating guide (drive the platform via the `quickflo` CLI). ' +
         'Deep authoring guides: the `quickflo://building-workflows` and ' +
-        '`quickflo://building-dashboards` MCP resources, or building-workflows.md / ' +
-        'building-dashboards.md in https://github.com/QuickFlo/cli.\n\n' +
+        '`quickflo://building-dashboards` / `quickflo://building-packages` MCP resources, or building-workflows.md / ' +
+        'building-dashboards.md / building-packages.md in https://github.com/QuickFlo/cli/tree/main/skill.\n\n' +
         AGENT_GUIDE;
       await Deno.writeTextFile(out, content);
       console.error(

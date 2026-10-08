@@ -183,7 +183,7 @@ quickflo skill install mcp        # print the MCP host-config snippet
 deno run -A jsr:@quickflo/cli skill install cursor
 ```
 
-Each skill install writes `SKILL.md`, `building-workflows.md`, and `building-dashboards.md`.
+Each skill install writes `SKILL.md`, `building-workflows.md`, `building-dashboards.md`, and `building-packages.md`.
 
 **Global is the default:** the skill is available across projects for your user account. To install for one project, run from that project's directory:
 
@@ -701,6 +701,35 @@ quickflo workflows run abcd -j | jq '.output'    # one final result object
 quickflo workflows run abcd --json-stream | jq -c '.' # JSONL progress + result
 quickflo workflows push -d ./wf -w > urls.txt   # just URL + secret lines
 ```
+
+### Package settings
+
+Publisher declarations are supplied as `settingsSource` on a descriptor's
+`data-store-table` root, with `includeSeedRows: true`. Use a descriptor for settings;
+`--root` cannot be combined with a descriptor containing settings roots.
+See [the package authoring guide](skill/building-packages.md) for the schema,
+field labels/help/controls/requiredness and a complete descriptor example.
+
+```bash
+# Reuse a previous publisher-owned version's settings declarations.
+quickflo packages settings published <package-id> <version> -j
+# Configure an installation (ids come from list --installed and describe).
+quickflo packages settings describe <install-id> -j
+quickflo packages settings records <install-id> <source-id> --all -j
+quickflo packages settings options <install-id> <source-id> --path /listName -j
+quickflo packages settings save <install-id> <source-id> --file changes.json --dry-run -j
+quickflo packages settings save <install-id> <source-id> --file changes.json -j
+quickflo packages settings delete <install-id> <source-id> --file delete.json --yes -j
+```
+
+Save files contain `{key, packageVersionId, revision, changes}`; changes are explicit
+`{operation:"set", path:"/field", value:…}` or `{operation:"remove", path:"/field"}`
+operations. Delete files contain only `{key, packageVersionId, revision}`.
+Use the exact version/revision read from the server (`revision: null` only for
+creation). HTTP 409 conflicts require rereading and reviewing; writes are never
+retried automatically. Dry runs print a request without server validation.
+These commands use the dedicated package settings API, including table aliases,
+editable-path restrictions and create/delete permissions.
 
 ## Flags and env vars
 

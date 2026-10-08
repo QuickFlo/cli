@@ -107,7 +107,7 @@ quickflo environments  list|get|create|update|pull|push|delete | set <env> <k> <
 quickflo triggers      list|get|create|update|delete|enable|disable|pull|push|rotate-secret|duplicate   # list --workflow scopes to one wf
 quickflo data-stores   tables … | list <table> [query…] | get <table> <key> [--meta] | set <table> <key> [value] | delete <table> <key> | import <table> | export <table> [query…]
 quickflo dashboards    list|get|create|update|delete|check|pull|push|export|import|query|meta | sources list|get|create|update|delete|refresh|sync|distinct|fields|calc-field|window-dim
-quickflo packages      list|list-versions|install|uninstall|upgrade|download|publish|init   # upgrade is plan/apply (preview, then --apply)
+quickflo packages      list|list-versions|install|uninstall|upgrade|download|publish|init|settings   # upgrade is plan/apply (preview, then --apply)
 quickflo microapp      new <name> | stripe-sync [config]
 quickflo backup        [-o <org>] [-d <dir>] [--dry-run] [--mask] [--include-packages] [--data-store-limit N]   # pull entire org to one folder
 ```
@@ -117,6 +117,12 @@ to the mutable package shell before publishing the immutable version. For an
 existing package, the shell PATCH completes first; if version publishing then
 fails, the README remains updated. `--dry-run` previews both operations without
 writing either.
+
+### Packages — authoring and installed settings
+
+When **authoring or modifying a package**, publishing settings pages, or configuring an installed package, read **[building-packages.md](building-packages.md)** (also `quickflo://building-packages`). It covers publisher descriptors, labels/help text/control selection/requiredness/defaults for every setting, and installed settings revisions and validation. Reuse published declarations when republishing; ordinary data-store writes do not enforce the package-settings contract.
+
+`packages settings` exposes `published` (publisher version declarations), `describe` (installed sources), `records`, `options`, `save`, and `delete`. Use each command's `--help` for arguments. Installed operations take the **install id** and **source id**, not the package id or resolved table name.
 
 ### data-stores — querying, paginating, and exporting entries
 
