@@ -706,7 +706,6 @@ quickflo workflows push -d ./wf -w > urls.txt   # just URL + secret lines
 
 Collection settings can override help text per record with `settingsSource.recordFieldDescriptions` (`record key → JSON-pointer field path → description`). Publish these through the existing descriptor; see [per-record hints](skill/building-packages.md#hints-for-individual-collection-records).
 
-
 Publisher declarations are supplied as `settingsSource` on a descriptor's
 `data-store-table` root, with `includeSeedRows: true`. Use a descriptor for settings;
 `--root` cannot be combined with a descriptor containing settings roots.
