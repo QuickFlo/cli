@@ -264,3 +264,42 @@ Deno.test('publish refuses --root replacement that would discard descriptor sett
   );
   assertEquals(calls, []);
 });
+
+Deno.test('publish preserves per-record field hints without expanding them into stored values', async () => {
+  const descriptor = {
+    version: '1.2.3',
+    roots: [{
+      kind: 'data-store-table',
+      tableName: 'report_settings',
+      includeSeedRows: true,
+      settingsSource: {
+        schemaVersion: 1,
+        mode: 'collection',
+        title: 'Reports',
+        keyLabel: 'Data source',
+        allowCreate: false,
+        allowDelete: false,
+        valueSchema: {
+          type: 'object',
+          properties: { reportFolder: { type: 'string', description: 'Shared folder.' } },
+        },
+        writablePaths: ['/reportFolder'],
+        recordFieldDescriptions: { custom: { '/reportFolder': 'Create this report first.' } },
+      },
+    }],
+  };
+  const calls: ApiCall[] = [];
+  const dependencies = testDependencies((path, init) => {
+    recordCall(calls, path, init);
+    if (path.startsWith('/packages?')) {
+      return { data: [{ id: 'package-id', slug: '@quickflo/example', name: 'Example' }] };
+    }
+    return publishResponse('package-id');
+  });
+  dependencies.readTextFile = () => Promise.resolve(JSON.stringify(descriptor));
+  await runPackagesPublish(
+    { packageRef: '@quickflo/example', descriptor: 'publish.json' },
+    dependencies,
+  );
+  assertEquals(calls.at(-1)?.body, descriptor);
+});

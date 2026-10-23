@@ -7,8 +7,10 @@ import { colors } from '@cliffy/ansi/colors';
 import { type ApiClient, apiFetch } from './api.ts';
 import { detectLookup, type Lookup } from './refs.ts';
 import { openSession } from './session.ts';
+import { buildWorkflowFileShape } from './workflows-save.ts';
 
 interface WorkflowRecord {
+  [key: string]: unknown;
   id: string;
   suid?: string;
   name: string;
@@ -40,19 +42,6 @@ async function fetchOne(
   return res.data?.[0] ?? null;
 }
 
-function toPushableShape(wf: WorkflowRecord): Record<string, unknown> {
-  const out: Record<string, unknown> = { name: wf.name };
-  if (wf.description) out['description'] = wf.description;
-  if (wf.definition?.environment) {
-    out['environment'] = wf.definition.environment;
-  }
-  if (wf.definition?.initial !== undefined) {
-    out['initial'] = wf.definition.initial;
-  }
-  out['steps'] = wf.definition?.steps ?? [];
-  return out;
-}
-
 export interface WorkflowsGetOptions {
   ref: string;
   by?: Lookup;
@@ -76,6 +65,6 @@ export async function runWorkflowsGet(
   }
 
   // Stdout is reserved for the JSON payload so `get <ref> > file.json` works.
-  const output = opts.json ? wf : toPushableShape(wf);
+  const output = opts.json ? wf : buildWorkflowFileShape(wf);
   console.log(JSON.stringify(output, null, 2));
 }

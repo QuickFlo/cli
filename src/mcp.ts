@@ -39,6 +39,7 @@ import { type ApiClient, apiFetch, type ResolvedOrg, resolveOrganization } from 
 import { probeToken, resolveSession } from './auth.ts';
 import { dataSourceAliasToId, dataSourceIdToAlias, fetchDataSources } from './dashboards-refs.ts';
 import { saveWorkflow, type WorkflowDefinition } from './workflows-save.ts';
+import { fetchWorkflowStepLibrary } from './workflows-steps.ts';
 import {
   AGENT_GUIDE,
   BUILDING_DASHBOARDS,
@@ -53,7 +54,7 @@ const SERVER_VERSION = '0.1.0';
 // resources (on-demand), so this stays short.
 const SERVER_INSTRUCTIONS =
   'QuickFlo tools — build, validate, and save workflows and dashboards from your host.\n' +
-  'Workflows loop: discover steps (list_steps / get_step_schema) → write the definition → ' +
+  'Workflows loop: discover steps (list_steps / get_step_schema; list_workflow_steps for Workspace/packages) → write the definition → ' +
   'validate_workflow after every edit, fix until ok → save_workflow_draft ' +
   '(creates a draft; no triggers, no execution).\n' +
   'Dashboards loop: discover fields (list_data_sources / get_data_source_schema) → ' +
@@ -94,7 +95,7 @@ const RESOURCES = [
     uri: 'quickflo://building-workflows',
     name: 'QuickFlo workflow-authoring guide',
     description:
-      'Deep guide for authoring/editing workflow JSON: definition format, LiquidJS, control flow, tool-workflow contract.',
+      'Deep guide for authoring/editing workflow JSON: definition format, LiquidJS, control flow, Tool and Step capabilities.',
     mimeType: 'text/markdown',
     text: BUILDING_WORKFLOWS,
   },
@@ -208,6 +209,17 @@ export function findFieldOptionsFetcher(
 
 // --- tool definitions (JSON Schema; no zod import → no version skew) ---
 const TOOLS = [
+  {
+    name: 'list_workflow_steps',
+    description:
+      'List Workspace and directly installed package workflow steps for the active organization, including exact workflow IDs, installed versions, presentation and unavailable exports. Invoke with core.sub-workflow using input.workflowTemplateId = the discovered workflowId; display names/groups are not step types.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org: { type: 'string', description: 'Org SUID/UUID. Defaults to the active org.' },
+      },
+    },
+  },
   {
     name: 'list_steps',
     description:
@@ -421,6 +433,9 @@ async function handleTool(
   args: Record<string, unknown> | undefined,
 ): Promise<unknown> {
   switch (name) {
+    case 'list_workflow_steps': {
+      return await fetchWorkflowStepLibrary(getClient(argString(args, 'org')));
+    }
     case 'list_steps': {
       const client = getClient(argString(args, 'org'));
       const res = await apiFetch<StepInfo[] | { steps?: StepInfo[]; data?: StepInfo[] }>(

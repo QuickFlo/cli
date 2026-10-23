@@ -19,6 +19,7 @@ import {
 } from './filters.ts';
 import { resolveInstallAddresses } from './package-installs.ts';
 import { openSession } from './session.ts';
+import { buildWorkflowFileShape } from './workflows-save.ts';
 
 /**
  * Loose shape: the CLI explicitly only knows about a handful of fields
@@ -100,50 +101,6 @@ function slugify(name: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80) || 'workflow';
-}
-
-/**
- * Server-managed fields stripped from the pulled file shape. The CLI
- * uses a denylist (not an allowlist) so any field the server adds in
- * the future flows through to the file without a CLI patch — silent
- * drops are the fail mode we're explicitly avoiding here.
- *
- * Fields are managed server-side and have no business round-tripping
- * through user-edited JSON: ids, audit timestamps, ownership, and
- * fields the engine derives from the definition (used-action-types).
- * `id` is the one exception we preserve in the file — push uses it as
- * a stable handle so renames don't double-create.
- */
-const SERVER_MANAGED_FIELDS = new Set([
-  'organizationId',
-  'packageInstallId',
-  'createdAt',
-  'updatedAt',
-  'userId',
-  'usedActionTypes',
-]);
-
-function buildFileShape(wf: RemoteWorkflow): Record<string, unknown> {
-  const definition = (wf['definition'] ?? {}) as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  // Pass through every top-level field except server-managed ones.
-  // `definition` is unwrapped below (its `steps`/`initial`/`environment`/
-  // `options` are surfaced at the top level so the file shape matches
-  // what workflows-push expects to read).
-  for (const [key, value] of Object.entries(wf)) {
-    if (SERVER_MANAGED_FIELDS.has(key)) continue;
-    if (key === 'definition') continue;
-    if (value === undefined || value === null) continue;
-    out[key] = value;
-  }
-  // Unwrap the definition's user-authored fields onto the top level.
-  if (definition['environment']) out['environment'] = definition['environment'];
-  if (definition['initial'] !== undefined) out['initial'] = definition['initial'];
-  // `options` carries executionMode, stopOnError, timeoutMilliseconds, and
-  // workerTier — surface the whole object so all of them round-trip.
-  if (definition['options'] !== undefined) out['options'] = definition['options'];
-  out['steps'] = definition['steps'] ?? [];
-  return out;
 }
 
 // Deterministic ordering by (name, id) so repeated pulls always assign the
@@ -242,7 +199,7 @@ export async function runWorkflowsPull(
 
   for (const { wf, filename } of assignments) {
     const fullPath = join(dir, filename);
-    const payload = JSON.stringify(buildFileShape(wf), null, 2) + '\n';
+    const payload = JSON.stringify(buildWorkflowFileShape(wf), null, 2) + '\n';
 
     const pkgAddr = wf.packageInstallId ? (packageAddresses.get(wf.packageInstallId) ?? '?') : null;
     const provenance = pkgAddr ? ` ${colors.dim(`[from ${pkgAddr}]`)}` : '';

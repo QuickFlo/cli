@@ -5,7 +5,7 @@
  */
 
 import { assert, assertEquals } from '@std/assert';
-import { buildDefinition, buildWorkflowPayload } from './workflows-save.ts';
+import { buildDefinition, buildWorkflowFileShape, buildWorkflowPayload } from './workflows-save.ts';
 
 Deno.test('buildDefinition nests steps/initial/environment/options', () => {
   const def = buildDefinition({
@@ -64,4 +64,51 @@ Deno.test('buildWorkflowPayload strips server-managed fields and id', () => {
   for (const k of ['id', 'organizationId', 'createdAt', 'updatedAt', 'userId', 'usedActionTypes']) {
     assert(!(k in payload), `expected "${k}" to be stripped`);
   }
+});
+
+Deno.test('authored schemas and tool metadata survive save/get/pull/save', () => {
+  const inputSchema = {
+    type: 'object',
+    properties: {
+      profile: {
+        type: 'object',
+        properties: {
+          enabled: { type: 'boolean', default: false },
+          labels: { type: 'array', items: { enum: ['first', 'second'] } },
+          limit: { anyOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] },
+        },
+        required: ['enabled'],
+      },
+    },
+    required: ['profile'],
+    additionalProperties: false,
+  };
+  const source = {
+    name: 'five9-tool',
+    steps: [{ stepId: 'call', stepType: 'five9.modify-campaign-profile' }],
+    initial: {},
+    inputSchema,
+    isTemplate: true,
+    tags: ['tool', 'five9'],
+    options: { workerTier: 'standard' },
+    agentToolMetadata: { requiresApproval: true },
+  };
+  const payload = buildWorkflowPayload(source);
+  assertEquals((payload['definition'] as Record<string, unknown>)['inputSchema'], inputSchema);
+  assert(!('inputSchema' in payload));
+  const file = buildWorkflowFileShape({ ...payload, id: 'saved', organizationId: 'org' });
+  assertEquals(file['inputSchema'], inputSchema);
+  assertEquals(file['agentToolMetadata'], source.agentToolMetadata);
+  assertEquals(file['tags'], source.tags);
+  assertEquals(file['options'], source.options);
+  assert(!('organizationId' in file));
+  assertEquals(buildWorkflowPayload({ ...file, name: source.name, steps: source.steps }), payload);
+});
+
+Deno.test('explicit empty input schema survives serialization without opting legacy files in', () => {
+  const payload = buildWorkflowPayload({ name: 'empty', steps: [], inputSchema: {} });
+  assertEquals(buildWorkflowFileShape(payload)['inputSchema'], {});
+  assert(
+    !('inputSchema' in buildWorkflowFileShape(buildWorkflowPayload({ name: 'legacy', steps: [] }))),
+  );
 });

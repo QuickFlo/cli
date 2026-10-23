@@ -1,5 +1,5 @@
 /**
- * `quickflo workflows steps list|get` — discovery surface that wraps
+ * `quickflo workflows steps list|get|library` — discovery surface that wraps
  * `/workflows/steps/info`. Useful for humans browsing what's available and
  * for AI agents that need machine-readable schemas before authoring a
  * workflow.
@@ -109,5 +109,66 @@ export async function runWorkflowsStepsGet(opts: WorkflowsStepsGetOptions): Prom
     console.log('');
     console.log(colors.bold('exampleInput:'));
     console.log(JSON.stringify(match.exampleInput, null, 2));
+  }
+}
+
+interface WorkflowLibraryStep {
+  workflowId: string;
+  workflowName: string;
+  displayName: string;
+  group?: string;
+  description?: string;
+  icon: string | null;
+}
+
+export interface WorkflowStepLibrary {
+  workspace: Array<WorkflowLibraryStep & { revision: string }>;
+  items: Array<
+    WorkflowLibraryStep & {
+      packageInstallId: string;
+      packageName: string;
+      packageSlug: string;
+      packageVersion: string;
+    }
+  >;
+  unavailable: Array<{
+    packageInstallId: string;
+    packageName: string;
+    workflowName: string;
+  }>;
+}
+
+// Discovery, version selection, and access checks belong to the server.
+export async function fetchWorkflowStepLibrary(
+  client: Parameters<typeof apiFetch>[0],
+): Promise<WorkflowStepLibrary> {
+  return await apiFetch<WorkflowStepLibrary>(client, '/workflows/library/steps');
+}
+
+export async function runWorkflowsStepsLibrary(opts: WorkflowsStepsListOptions): Promise<void> {
+  const { client } = await openSession(opts, 'workflows steps library');
+  const library = await fetchWorkflowStepLibrary(client);
+  if (opts.json) {
+    console.log(JSON.stringify(library, null, 2));
+    return;
+  }
+  const rows = [
+    ...library.workspace.map((step) => ({ step, folder: 'Workspace' })),
+    ...library.items.map((step) => ({
+      step,
+      folder: `Packages / ${step.packageName} (${step.packageVersion})`,
+    })),
+  ];
+  for (const { step, folder } of rows) {
+    const path = [folder, step.group, step.displayName].filter(Boolean).join(' / ');
+    console.log(`${path}  ${step.workflowId}  (${step.workflowName})`);
+  }
+  for (const step of library.unavailable) {
+    console.log(
+      `Unavailable: ${step.packageName} / ${step.workflowName} (install ${step.packageInstallId})`,
+    );
+  }
+  if (rows.length === 0 && library.unavailable.length === 0) {
+    console.log(colors.dim('(no workflow steps available)'));
   }
 }

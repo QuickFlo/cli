@@ -109,6 +109,26 @@ Limits: root value schema must be an object; at most 256 schema nodes, 8 levels,
 
 The server packages the declaration into `resources/data-store-tables/<table>.json` with `$schema: "data-store-table-resource@1"` and `settings`, plus a `settingsSource: true` discovery marker in the manifest. `.qfpkg` downloads/uploads already preserve this. Author through publish descriptors; there is no second settings store or standalone page artifact to maintain.
 
+## Hints for individual collection records
+
+Use `settingsSource.recordFieldDescriptions` when a field needs different help for a particular record. Keep shared help in the property's `description`; key overrides by exact record key, then JSON-pointer field path:
+
+```json
+{
+  "recordFieldDescriptions": {
+    "custom_source": {
+      "/reportFolder": "Create this report and share its folder with the API user."
+    }
+  }
+}
+```
+
+This fragment belongs inside a `mode: "collection"` settings source. Overrides replace only presentation text; stored values, validation, defaults and permissions stay shared. An omitted override uses the shared description; an empty string suppresses it. Remove an override to restore shared help. Record keys may refer to records created after installation. Paths must refer to declared fields or groups, with `/` and `~` escaped as `~1` and `~0`. Limits: 256 field hints total, 2,000 characters per hint, and 64 KiB for the override map. Expressions and value-based conditions are unsupported.
+
+In the visual editor, select a record in **Installer preview**, choose a field, then set **Help text** to **Only <record>**. **Use shared hint** removes the override. Preview and installer search use the selected record's effective hints. Hidden-field overrides stay in the authoring draft but are omitted from publication.
+
+Publish the full descriptor normally and read `packages settings published` back to verify the overrides survived. The server validates the contract; `--dry-run` does not. Deploy API and UI support before publishing to an older environment. The hints travel in the package artifact and reach existing installations on upgrade.
+
 ## Configure an installed package
 
 Use the package settings commands, which enforce the installed contract and table aliases. Ordinary `data-stores set` does not enforce package-settings editable paths or version/revision checks; use it only for a separately requested raw-data repair with understood consequences.

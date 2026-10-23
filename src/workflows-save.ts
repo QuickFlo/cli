@@ -49,13 +49,14 @@ const SERVER_MANAGED_FIELDS = new Set([
  * shape flattens them for ergonomics, so the payload nests them back.
  * `options` carries executionMode, stopOnError, timeoutMilliseconds, workerTier.
  */
-const DEFINITION_FIELDS = new Set(['environment', 'initial', 'steps', 'options']);
+const DEFINITION_FIELDS = new Set(['environment', 'initial', 'inputSchema', 'steps', 'options']);
 
 export function buildDefinition(def: WorkflowDefinition): Record<string, unknown> {
   const definition: Record<string, unknown> = {
     steps: def['steps'] ?? [],
   };
   if (def['initial'] !== undefined) definition['initial'] = def['initial'];
+  if (def['inputSchema'] !== undefined) definition['inputSchema'] = def['inputSchema'];
   if (def['environment']) definition['environment'] = def['environment'];
   if (def['options'] !== undefined) definition['options'] = def['options'];
   return definition;
@@ -64,7 +65,7 @@ export function buildDefinition(def: WorkflowDefinition): Record<string, unknown
 /**
  * Builds the top-level POST/PATCH payload via denylist passthrough: server-
  * managed fields stripped, `definition` rebuilt from flattened
- * steps/initial/environment/options, everything else flows through. The
+ * steps/initial/inputSchema/environment/options, everything else flows through. The
  * server's Zod validates and rejects unknown fields (bd-y8tr).
  */
 export function buildWorkflowPayload(
@@ -175,4 +176,29 @@ export async function saveWorkflow(
   }
   const workflow = await createWorkflow(client, def);
   return { workflow, action: 'created' };
+}
+
+/** Shared pushable serialization for workflows get and pull. */
+export function buildWorkflowFileShape(wf: Record<string, unknown>): Record<string, unknown> {
+  const definition = (wf['definition'] ?? {}) as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  // Pass through every top-level field except server-managed ones.
+  // `definition` is unwrapped below (its `steps`/`initial`/`environment`/
+  // `inputSchema`/`options` are surfaced at the top level so the file shape matches
+  // what workflows-push expects to read).
+  for (const [key, value] of Object.entries(wf)) {
+    if (SERVER_MANAGED_FIELDS.has(key)) continue;
+    if (key === 'definition') continue;
+    if (value === undefined || value === null) continue;
+    out[key] = value;
+  }
+  // Unwrap the definition's user-authored fields onto the top level.
+  if (definition['environment']) out['environment'] = definition['environment'];
+  if (definition['initial'] !== undefined) out['initial'] = definition['initial'];
+  if (definition['inputSchema'] !== undefined) out['inputSchema'] = definition['inputSchema'];
+  // `options` carries executionMode, stopOnError, timeoutMilliseconds, and
+  // workerTier — surface the whole object so all of them round-trip.
+  if (definition['options'] !== undefined) out['options'] = definition['options'];
+  out['steps'] = definition['steps'] ?? [];
+  return out;
 }

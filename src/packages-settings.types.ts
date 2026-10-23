@@ -45,7 +45,12 @@ export type PackageSettingsSource =
   & SettingsSourceBase
   & (
     | { mode: 'singleton'; key: string; initialValue?: Record<string, unknown> }
-    | { mode: 'collection'; keyLabel: string }
+    | {
+      mode: 'collection';
+      keyLabel: string;
+      /** Exact record key -> declared JSON-pointer field path -> help text. */
+      recordFieldDescriptions?: Record<string, Record<string, string>>;
+    }
   );
 
 export interface PackageSettingsResponse {

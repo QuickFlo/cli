@@ -122,7 +122,11 @@ import { runWorkflowsValidate } from './src/workflows-validate.ts';
 import { runLogsFacets, runLogsSearch } from './src/logs.ts';
 import { runMcp } from './src/mcp.ts';
 import { runSkillInstall } from './src/skill-install.ts';
-import { runWorkflowsStepsGet, runWorkflowsStepsList } from './src/workflows-steps.ts';
+import {
+  runWorkflowsStepsGet,
+  runWorkflowsStepsLibrary,
+  runWorkflowsStepsList,
+} from './src/workflows-steps.ts';
 import { runConnectionsTest } from './src/connections-test.ts';
 
 const byType = new EnumType(['id', 'suid', 'name']);
@@ -922,7 +926,7 @@ const workflowsValidate = new Command()
   });
 
 const workflowsStepsList = new Command()
-  .description('List every step type available to workflows.')
+  .description('List native platform step types. Use steps library for workflow steps.')
   .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
   .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
   .option('-j, --json', 'Emit JSON instead of a table.', { default: false })
@@ -949,10 +953,26 @@ const workflowsStepsGet = new Command()
     });
   });
 
+const workflowsStepsLibrary = new Command()
+  .description('List Workspace and installed package workflow steps in the active organization.')
+  .option('-o, --org <suid:string>', 'Organization SUID or UUID (or set QF_ORG)')
+  .option('--api-url <url:string>', 'Override API base URL (or set QF_API_URL)')
+  .option('-j, --json', 'Emit the full library, including unavailable exports, as JSON.', {
+    default: false,
+  })
+  .action(async (opts) => {
+    await runWorkflowsStepsLibrary({
+      apiUrl: opts.apiUrl || Deno.env.get('QF_API_URL') || undefined,
+      orgId: opts.org,
+      json: opts.json,
+    });
+  });
+
 const workflowsSteps = new Command()
   .description('Discover available step types (catalog with input/output schemas).')
   .command('list', workflowsStepsList)
-  .command('get', workflowsStepsGet);
+  .command('get', workflowsStepsGet)
+  .command('library', workflowsStepsLibrary);
 
 const workflows = new Command()
   .description('Workflow management commands.')

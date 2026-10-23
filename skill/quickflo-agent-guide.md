@@ -47,7 +47,8 @@ quickflo workflows list [-j] [-n <substr>] [--where f:op:v] [--tags a,b] [--temp
 quickflo workflows get <ref> [-j] [--by id|suid|name]      # ref auto-detects UUID/name; default emits *pushable* JSON, -j emits raw record
 quickflo workflows validate|check [file] [--from-stdin] [--strict] [-j]   # exit 3 on errors; --strict treats warnings (e.g. missing connections) as failures
 quickflo workflows run <ref> [--input '<json>' | --input-file <p> | --input-stdin] [--env <name>] [--mode sync|async] [--show ids] [--hide ids] [--timeout <s>] [--save-trace <p>] [--save-steps-to <dir>] [-j | --json-stream]
-quickflo workflows steps list [-j]                          # full step-type catalog
+quickflo workflows steps library [-j]                       # Workspace + installed package workflow steps
+quickflo workflows steps list [-j]                          # native platform step-type catalog
 quickflo workflows steps get <type> [-j]                    # one step type + input/output JSON Schemas
 quickflo workflows pull -d <dir> [filters…] [--force] [--dry-run]    # download defs to disk
 quickflo workflows push -d <dir> [-w] [--dry-run] [-c <n>]          # bulk upsert; respects sub-workflow dep order
@@ -57,7 +58,7 @@ Filter grammar for `--where` (workflows list/pull, executions): `<field>:<op>:<v
 
 ### Building or editing a workflow definition
 
-When the task is to **author or modify a workflow JSON** (build from scratch, edit a file, assemble a tool workflow for `ai.agent`), see the companion guide **`building-workflows.md`** (shipped alongside this guide; also available as the `quickflo://building-workflows` MCP resource). It carries the full definition format, LiquidJS template syntax, step-output field reference, control-flow + for-each rules, the tool-workflow contract (`name`/`description`/`initial` DSL/`tags`/`agentToolMetadata`), and the discovery commands (`workflows steps list`/`steps get <type> -j`) to inspect real schemas instead of guessing.
+When the task is to **author or modify a workflow JSON** (build from scratch, edit a file, assemble a tool workflow for `ai.agent`), see the companion guide **`building-workflows.md`** (shipped alongside this guide; also available as the `quickflo://building-workflows` MCP resource). It carries the full definition format, LiquidJS template syntax, step-output field reference, control-flow + for-each rules, the tool-workflow contract (`name`/`description`/`initial` DSL/`tags`/`agentToolMetadata`), the Step capability (`isTemplate`, `step` tag, optional `uiMetadata.step` name/group), and the discovery commands (`workflows steps list`/`steps get <type> -j`) to inspect real schemas instead of guessing.
 
 The non-negotiable loop there: **write → `quickflo workflows validate <file> -j` → fix every error → re-run until exit 0 → only then `push`.** `validate` (alias `check`) is the server-side typechecker — it catches undefined/forward step references, unknown Liquid filters, bad output fields, and tier/concurrency problems before they ever hit a run. Use **plain `validate`** in the loop (errors block; warnings such as a not-yet-created connection are advisory). Reserve `--strict` (which fails on warnings too) for an optional final pre-push gate. Never `push` an unvalidated definition.
 
@@ -249,7 +250,7 @@ The JSON shape per entry is the log row: `timestamp, source, level, channel, ori
 
 ### mcp — MCP server for agent hosts
 
-`quickflo mcp` runs a stdio [MCP](https://modelcontextprotocol.io) server exposing workflow tools (`list_steps`, `get_step_schema`, `list_connections`, `validate_workflow`, `save_workflow_draft`) to MCP hosts (Claude Code/Desktop, Cursor). It is a long-running server for **host configuration, not interactive use** — do not invoke it as a step in a task. Auth comes from the active profile; org via `QF_ORG` or a per-tool `org` arg. Host config: `{ "command": "quickflo", "args": ["mcp"], "env": { "QF_ORG": "<suid>" } }`. See the CLI `README.md` for details.
+`quickflo mcp` runs a stdio [MCP](https://modelcontextprotocol.io) server exposing workflow tools (`list_steps`, `list_workflow_steps`, `get_step_schema`, `list_connections`, `validate_workflow`, `save_workflow_draft`) to MCP hosts (Claude Code/Desktop, Cursor). It is a long-running server for **host configuration, not interactive use** — do not invoke it as a step in a task. Auth comes from the active profile; org via `QF_ORG` or a per-tool `org` arg. Host config: `{ "command": "quickflo", "args": ["mcp"], "env": { "QF_ORG": "<suid>" } }`. See the CLI `README.md` for details.
 
 ## How to approach a task
 

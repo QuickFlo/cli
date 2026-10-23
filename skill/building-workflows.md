@@ -7,6 +7,7 @@ Read this when the task is to **author or modify a workflow JSON definition** (b
 The server is the source of truth for what's available. Use these instead of reading repo source:
 
 ```bash
+quickflo workflows steps library -j              # Workspace + installed package workflows; exact IDs, versions, missing exports
 quickflo workflows steps list -j                 # step catalog: rows of { stepType, description, inputSchema, outputSchema, ui:{category,displayName} }
 quickflo workflows steps get <stepType> -j        # one step's input/output JSON Schemas — read before configuring inputs
 quickflo workflows list -j                        # find an existing workflow to learn patterns from
@@ -90,6 +91,45 @@ When unsure, the output shape is in `steps get <type> -j` under the output schem
 - For workflows beyond ~12-15 steps, decompose into sub-workflows.
 - Prefer `core.if`/`core.switch` over `skipCondition`.
 - `ai.llm-call` defaults: `webSearch: true` for anthropic/google; fast models by default (`claude-haiku-4-5-20251001`, `gpt-4.1-mini`, `gemini-2.5-flash`).
+
+## Workflow Step capability (Workspace and packages)
+
+To make a saved workflow appear in the Builder's step library, set top-level `isTemplate: true` and include `"step"` in `tags`. Tool and Step are independent capabilities; either requires Template. A workflow may use both tags. Optional presentation is top-level `uiMetadata.step`, alongside `tags`, not inside `definition`, `initial`, or `agentToolMetadata`.
+
+This is a complete pushable fixture:
+
+```json
+{
+  "name": "greet-person",
+  "description": "Return a greeting for a person.",
+  "isTemplate": true,
+  "tags": ["step"],
+  "uiMetadata": { "step": { "group": "Greetings", "displayName": "Greet person" } },
+  "initial": { "name": "string: Person to greet" },
+  "steps": [
+    { "stepId": "result", "stepType": "core.return", "input": { "greeting": "Hello {{ initial.name }}" } }
+  ]
+}
+```
+
+- `displayName` defaults to the workflow's name; optional, trimmed, at most 120 characters.
+- `group` is optional, trimmed, at most 80 characters, and one level only (no `/` or `\`). Blank means directly under Workspace or the package folder. Do not invent a `default` or `workspace` group.
+- The settings preview shows `group.name` when grouped, otherwise the effective name. This is presentation, not a callable identifier or `stepType`.
+- Reuse the workflow description, existing input schema (including Quickforms hints), and output inferred from `core.return`. There is no separate Step schema or execution engine.
+
+Customer-owned Step workflows appear immediately under **Workspace → optional group → step** in the active organization. Workflows exported from directly installed packages appear under **Packages → package display name → optional group → step** with the package's published icon, also used on canvas nodes. The publisher derives `manifest.exports.steps` from eligible workflows; dependency-only packages stay hidden from browsing, while nested dependency calls remain supported.
+
+Discover the server's eligible entries before calling one:
+
+```bash
+quickflo workflows steps library -j
+quickflo workflows get '<workflowId-from-library>' --by id -j
+quickflo workflows steps get core.sub-workflow -j
+```
+
+`steps library -j` returns `workspace`, installed `items`, and `unavailable` exports, scoped to the active organization and installed package version. MCP hosts use `list_workflow_steps`. Read the selected workflow's inputs/Return contract, then use **`core.sub-workflow` with `input.workflowTemplateId` set to the exact discovered `workflowId`** and arguments in `input.input`. Follow its normal wait/error/environment behavior. Do not invent a native `stepType` from a package slug, display name, or group; do not fall back to a same-name workflow when the selected one is missing.
+
+Upgrades follow the installed version and update the workflow/form. Removal or a missing export leaves saved calls unavailable with a clear error. Preserve `isTemplate`, `tags`, and `uiMetadata.step` through get/pull/edit/push and package export/import. When editing a file, retain other `uiMetadata` fields too. Set `uiMetadata.step` to `{}` to reset name/group overrides while retaining the rest of that object. On a partial API update, omit the whole `uiMetadata` object to leave it untouched.
 
 ## Tool workflows (consumed by `ai.agent`)
 
