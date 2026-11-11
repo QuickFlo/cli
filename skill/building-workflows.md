@@ -199,6 +199,25 @@ Top-level object alongside `tags`; controls runtime behavior, not discovery.
 - `approvalMessage` is Liquid rendered against `{ toolName, args }`. **Standard LiquidJS only** — `size`, `join`, `default`, `upcase`, `downcase`, `truncate`, `replace`, `{% if %}`, `{% for %}` work; custom engine filters silently no-op.
 - `toolName` — optional snake_case override; skip unless `sanitizeToolName(name)` is ugly.
 
+### Inputs the agent must not choose (connections, tenant ids)
+Some inputs should come from the calling workflow, not the model: which connection to use, an account id, a region. Declare them on the tool and fill them from the agent step.
+
+On the tool, flag the input in `inputSchema.properties` with `"x-agent-input": false`. It is removed from the schema the model sees, and a call that supplies it anyway is rejected. Connection inputs (`"x-render": "connection-target"`, optional `"x-connection-type": "<type>"`) are hidden by default. Give the step that consumes it a fallback so the tool still works when nothing is supplied:
+```json
+"connection": "{{ initial | pick: 'connectionName' | values | first | default: $env.five9 }}"
+```
+
+On the agent step, set `fixedInputs` on the tool entry (works on both `inline` and `pack` entries):
+```json
+"tools": [
+  { "kind": "pack", "packageInstallId": "<install-id>", "fixedInputs": { "connectionName": "{{ initial.five9Connection }}" } }
+]
+```
+- Only top-level inputs the tool flags `x-agent-input: false` are filled. Any other key is ignored, and a blank value is skipped so the tool's own default applies.
+- Each entry is independent: two packs that both declare `connectionName` can point at different connections. Repeat the value on every entry that needs it.
+- The value is a normal template, so it can come from a form field, a chat pre-chat field, or `$vars`. Approved (deferred) tool calls carry it too.
+- To find what a tool accepts, read its inputSchema: `quickflo workflows get <tool> -j | jq '.definition.inputSchema.properties | to_entries[] | select(.value["x-agent-input"] == false) | .key'`.
+
 ### Error surfacing in tool workflows
 The agent step catches sub-workflow throws and returns `{ toolError: { code:'TOOL_EXECUTION_FAILED', message, retryable:false } }` — the LLM sees a flat string and loses structured detail. To preserve diagnostics (HTTP status, body):
 1. Set `continueOnError: true` on every `core.http` step inside the tool.
@@ -238,3 +257,17 @@ It does NOT type-check templated values (a `{{ }}` in a number field is fine —
 6. If the user wants it live: `quickflo workflows push -d <dir>` (only after a clean validate). Confirm the active org first.
 
 Ambiguous request → ask clarifying questions before building.
+
+### Form response navigation and repeat submissions
+
+A Return step can set `formSubmission.actions` to button definitions such as
+`{ "label": "Back to packs", "url": "/f/@goat/five9-resource-packs", "mode": "navigate", "target": "_self" }`.
+Use `target: "_self"` for navigation within a form tool; `"_blank"` opens a new tab.
+Omitting `target` retains the existing new-tab behavior. Request-mode actions
+ignore `target`. The Form Response editor exposes this as **Open in**.
+
+The built-in **Make Another Submission** action resets submission state in the
+current page and retains authentication. An existing signed form session is
+also retained in tab-scoped browser storage when returning to that same form.
+Its server-enforced expiry and trigger scope are unchanged; tokens are not
+shared across different forms. Explicit sign-out clears the saved session.
